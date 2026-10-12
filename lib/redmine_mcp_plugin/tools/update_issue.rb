@@ -5,12 +5,13 @@ module RedmineMcpPlugin
     class UpdateIssue < Tool
       tool 'update_issue',
            title: 'Update issue',
-           description: 'Change an existing issue: status, assignee, priority, subject, description ' \
-                        'and custom fields, with an optional note recorded in the same journal entry. ' \
+           description: 'Change an existing issue: status, assignee, priority, subject, description, ' \
+                        'parent and custom fields, with an optional note recorded in the same journal entry. ' \
                         'Call get_issue_fields first to learn what this user may set and which values ' \
                         'are allowed. Changes the role or workflow does not permit are refused by ' \
                         'name. End with the url.',
            permission: %i[edit_issues edit_own_issues],
+           scopes: %i[manage_subtasks],
            write: true,
            destructive: true,
            schema: {
@@ -24,6 +25,8 @@ module RedmineMcpPlugin
                'assigned_to' => { 'type' => %w[integer string],
                                   'description' => 'User id from list_users, or "me".' },
                'priority' => { 'type' => 'string', 'description' => 'Priority name.' },
+               'parent' => { 'type' => %w[integer string],
+                             'description' => 'Parent issue id, or "none" to remove the parent.' },
                'custom_fields' => { 'type' => 'object',
                                     'description' => 'Custom field values keyed by numeric field id, e.g. {"7": "3"}. ' \
                                                      'Send the value from get_issue_fields possible_values, never the label.' },
@@ -46,6 +49,7 @@ module RedmineMcpPlugin
         refuse_unsettable!(issue, attributes)
         refuse_status!(issue, attributes['status_id'], arguments['status']) if attributes.key?('status_id')
         refuse_unknown_custom_fields!(issue, custom_field_ids(arguments))
+        attributes['parent_issue_id'] = parent_attribute(issue, arguments['parent']) if attributes.key?('parent_issue_id')
 
         # notes delegates to the journal and is swallowed when there is none,
         # so the journal has to exist first.
@@ -96,6 +100,8 @@ module RedmineMcpPlugin
         end
 
         attributes['assigned_to_id'] = assignee_id(issue, arguments['assigned_to']) if arguments['assigned_to'].present?
+        # The key alone, so the permission refusal comes before the parent's own checks.
+        attributes['parent_issue_id'] = arguments['parent'] unless arguments['parent'].nil?
 
         if (values = custom_field_values_from(arguments))
           attributes['custom_field_values'] = values

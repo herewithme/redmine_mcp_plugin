@@ -5,8 +5,8 @@ module RedmineMcpPlugin
     class GetIssueFields < Tool
       tool 'get_issue_fields',
            title: 'Get settable issue fields',
-           description: 'Report what the authenticated user may set on an issue: its custom fields ' \
-                        'with their allowed values, which attributes are required or read-only, the ' \
+           description: 'Report what the authenticated user may set on an issue: the attributes it may ' \
+                        'set, its custom fields with their allowed values, which are required or read-only, the ' \
                         'statuses the issue may move to, and the users it may be assigned to. Call ' \
                         'this before create_issue or update_issue. Pass issue for an existing issue, ' \
                         'or project (and optionally tracker) for one not yet created. When a required ' \
@@ -33,6 +33,8 @@ module RedmineMcpPlugin
           issue_id: issue.id,
           project_identifier: issue.project&.identifier,
           tracker: issue.tracker&.name,
+          # Parameter names, from the same core rule the write tools refuse by.
+          settable_attributes: WRITE_ATTRIBUTES.select { |_name, attribute| issue.safe_attribute?(attribute, user) }.keys,
           # Core mixes attribute names with custom field ids here; the ids are
           # reported on each custom field instead.
           required_attributes: core_attributes(issue.required_attribute_names(user)),

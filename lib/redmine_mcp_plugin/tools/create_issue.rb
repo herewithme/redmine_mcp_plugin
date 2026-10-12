@@ -8,6 +8,7 @@ module RedmineMcpPlugin
            description: 'Create a new issue in a project. Call get_issue_fields first to learn which ' \
                         'custom fields this user may set and which values are allowed. End with the url.',
            permission: :add_issues,
+           scopes: %i[manage_subtasks],
            write: true,
            schema: {
              'type' => 'object',
@@ -21,6 +22,7 @@ module RedmineMcpPlugin
                'priority' => { 'type' => 'string', 'description' => 'Priority name. Defaults to the Redmine default.' },
                'assigned_to' => { 'type' => %w[integer string],
                                   'description' => 'User id from list_users, or "me".' },
+               'parent' => { 'type' => 'integer', 'description' => 'Parent issue id.' },
                'custom_fields' => { 'type' => 'object',
                                     'description' => 'Custom field values keyed by numeric field id, e.g. {"7": "3"}. ' \
                                                      'Send the value from get_issue_fields possible_values, never the label.' }
@@ -51,6 +53,8 @@ module RedmineMcpPlugin
         end
 
         attributes['assigned_to_id'] = assignee_id(issue, arguments['assigned_to']) if arguments['assigned_to'].present?
+        # The key alone, so the permission refusal comes before the parent's own checks.
+        attributes['parent_issue_id'] = arguments['parent'] unless arguments['parent'].nil?
 
         if (values = custom_field_values_from(arguments))
           attributes['custom_field_values'] = values
@@ -58,6 +62,7 @@ module RedmineMcpPlugin
 
         refuse_unknown_custom_fields!(issue, custom_field_ids(arguments))
         refuse_unsettable!(issue, attributes)
+        attributes['parent_issue_id'] = parent_attribute(issue, arguments['parent']) if attributes.key?('parent_issue_id')
         issue.safe_attributes = attributes
         raise ToolError, "Could not create issue: #{issue.errors.full_messages.join('; ')}" unless issue.save
 

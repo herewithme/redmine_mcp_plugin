@@ -236,8 +236,11 @@ module RedmineMcpPlugin
 
     # --- writes -------------------------------------------------------------
 
-    PARAMETER_NAMES = { 'status_id' => 'status', 'priority_id' => 'priority',
-                        'assigned_to_id' => 'assigned_to', 'custom_field_values' => 'custom_fields' }.freeze
+    # One table for the refusal names and for get_issue_fields' settable list.
+    WRITE_ATTRIBUTES = { 'subject' => 'subject', 'description' => 'description', 'status' => 'status_id',
+                         'priority' => 'priority_id', 'assigned_to' => 'assigned_to_id',
+                         'parent' => 'parent_issue_id', 'custom_fields' => 'custom_field_values' }.freeze
+    PARAMETER_NAMES  = WRITE_ATTRIBUTES.invert.freeze
 
     # Core drops what the role, tracker or workflow forbids and saves the rest;
     # name it and stop instead.
@@ -254,6 +257,29 @@ module RedmineMcpPlugin
       return id if issue.assignable_users.any? { |principal| principal.id == id }
 
       raise ToolError, "#{id} is not assignable on #{issue.project.identifier}"
+    end
+
+    # Core says only "Parent task is invalid" for several causes; name them with
+    # its own predicates. Runs after refuse_unsettable!, so permission comes first.
+    def parent_attribute(issue, value)
+      return '' if value == 'none'
+      raise ToolError, 'parent must be an issue id, or "none"' unless SchemaValidator.integerish?(value)
+
+      parent = fetch_issue(value)
+      if !issue.new_record? && issue.is_or_is_ancestor_of?(parent)
+        raise ToolError, "Parent ##{parent.id} is this issue or one of its subtasks"
+      end
+      unless issue.valid_parent_project?(parent)
+        raise ToolError, "Parent ##{parent.id} is in #{parent.project.identifier}, outside what the " \
+                         "cross-project subtasks setting (#{cross_project_label}) allows"
+      end
+
+      parent.id.to_s
+    end
+
+    def cross_project_label
+      setting = Setting.cross_project_subtasks
+      setting.present? ? I18n.t("label_cross_project_#{setting}") : I18n.t(:label_disabled)
     end
 
     # Same reason: core keeps only the custom fields this user may edit here.
@@ -278,6 +304,7 @@ module RedmineMcpPlugin
         status: issue.status&.name,
         assigned_to: issue.assigned_to&.name,
         priority: issue.priority&.name,
+        parent: issue.parent_id,
         custom_fields: saved_custom_fields(issue, custom_field_ids),
         url: absolute_url(:issue_url, issue)
       }

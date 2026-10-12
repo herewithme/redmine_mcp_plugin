@@ -74,11 +74,13 @@ sections.
 | `add_issue_notes` | Add notes | Issue tracking — **not** the "Add notes" under Contacts |
 | `log_time` | Log spent time | Time tracking — **not** "Log spent time for other users" |
 | `set_notes_private` | Set notes as private | Issue tracking |
+| `manage_subtasks` | Manage subtasks | Issue tracking |
 
 The first four are advertised in read-only mode, which is the default, and are all an application
-needs while the server stays read-only. The last six are advertised only once read-only mode is
-switched off. `set_notes_private` gates no tool: `add_issue_note` checks it for `private: true`, and
-a permission a tool checks at runtime must be advertised, or no token can ever carry it.
+needs while the server stays read-only. The last seven are advertised only once read-only mode is
+switched off. `set_notes_private` and `manage_subtasks` gate no tool: `add_issue_note` checks the first
+for `private: true`, `create_issue` and `update_issue` the second for `parent`, and a permission a tool
+checks at runtime must be advertised, or no token can ever carry it.
 
 Adding a tool with a new permission changes the advertised set, and every user reconnects to get a
 token that carries it. The application only needs editing if it did not already enable the scope.
@@ -98,8 +100,8 @@ Ours advertises the permissions the registered tools declare (`mcp_permissions`)
 check at runtime (`scopes`), dropping the write tools while the server is read-only, intersected
 with what Doorkeeper will accept. Read-only gives `view_project`, `view_issues`, `view_wiki_pages`
 and `view_time_entries`; with writes on, add `add_issues`, `add_issue_notes`, `edit_issues`,
-`edit_own_issues`, `log_time` and `set_notes_private`. The OAuth application in Redmine must enable
-at least these; it may enable more. The same file probes Doorkeeper for PKCE support rather than
+`edit_own_issues`, `log_time`, `set_notes_private` and `manage_subtasks`. The OAuth application in
+Redmine must enable at least these; it may enable more. The same file probes Doorkeeper for PKCE support rather than
 assuming it, and advertises `S256` only — never `plain`, which MCP clients may not select.
 
 On our instance PKCE support is confirmed: `/.well-known/oauth-authorization-server` returns
@@ -227,8 +229,8 @@ while read-only mode is on, which is the default.
 | `list_users` | none. Filtered by `Principal.visible` |
 | `list_time_entries` | `view_time_entries`. Totals, per-group hours and each entry's custom fields, filtered by `TimeEntry.visible` |
 | `get_issue_fields` | `view_issues`. What the caller may set on an issue, before a write |
-| `create_issue` (write) | `add_issues`, on the requested tracker |
-| `update_issue` (write) | `edit_issues`, or `edit_own_issues` on one's own issue, on the issue's tracker |
+| `create_issue` (write) | `add_issues`, on the requested tracker, plus `manage_subtasks` for `parent` |
+| `update_issue` (write) | `edit_issues`, or `edit_own_issues` on one's own issue, on the issue's tracker, plus `manage_subtasks` for `parent` |
 | `add_issue_note` (write) | `add_issue_notes`, on the issue's tracker, plus `set_notes_private` for private notes |
 | `log_time` (write) | `log_time`. Always for the authenticated user |
 
@@ -238,7 +240,8 @@ while read-only mode is on, which is the default.
 
 Parameters use one shape per concept across tools: an issue is `issue`, a numeric id; a project is
 `project`, an identifier or numeric id; a person — `assigned_to`, `author`, `user` — is a user id from
-`list_users`, or `"me"`. Filters that name a project, an issue, a version or a category through
+`list_users`, or `"me"`; `parent` is an issue id, and on `update_issue` the string `"none"` removes
+the parent. Filters that name a project, an issue, a version or a category through
 `filters` are authorised like the named parameters, so an invisible one is refused rather than
 answered with zero.
 
@@ -246,7 +249,9 @@ Writes refuse rather than guess, and save nothing when they refuse: `create_issu
 when the project allows more than one, and `log_time` needs `activity`. `create_issue` and
 `update_issue` refuse by name any field or custom field, and `update_issue` any status, that the role,
 tracker or workflow does not let this user set; `log_time` does the same for custom fields. These are
-the things core would drop silently and save the rest.
+the things core would drop silently and save the rest. A `parent` that is invisible, circular, or
+outside the cross-project subtasks setting is refused by cause, where core would say only "Parent task
+is invalid".
 
 Arguments are checked against each tool's declared schema. A value outside a declared `enum`, below a
 declared `minimum`, of the wrong type, or missing when required is refused rather than ignored.
