@@ -59,7 +59,7 @@ module RedmineMcpPlugin
       Protocol.decorate(
         protocolVersions: RedmineMcpPlugin::SUPPORTED_PROTOCOL_VERSIONS,
         capabilities: Protocol.capabilities,
-        serverInfo: Protocol.server_info
+        serverInfo: Protocol.implementation
       )
     end
 
@@ -69,7 +69,7 @@ module RedmineMcpPlugin
       {
         protocolVersion: Protocol.negotiate_initialize(requested),
         capabilities: Protocol.capabilities,
-        serverInfo: Protocol.server_info,
+        serverInfo: Protocol.implementation,
         instructions: 'Redmine over MCP. Every tool runs as the authenticated Redmine user and is ' \
                       'limited by that user\'s project permissions, and by the OAuth2 scopes of the ' \
                       'presented token where one is used. Results are already filtered; an empty ' \

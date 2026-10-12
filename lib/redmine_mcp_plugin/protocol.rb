@@ -11,11 +11,33 @@ module RedmineMcpPlugin
   # this, so both paths are served.
   module Protocol
     META_SERVER_INFO_KEY  = 'io.modelcontextprotocol/serverInfo'
+    ICON_PATH = File.expand_path('../../assets/icon.png', __dir__)
+
+    # Embedded, because the firewall admits the client only on /mcp, /.well-known and /oauth,
+    # so a URL to the icon would never load. Cosmetic: any failure means no icons, never no boot.
+    ICONS = begin
+      png = File.binread(ICON_PATH) if File.file?(ICON_PATH)
+      if png
+        raise ArgumentError, 'not a PNG' unless png.start_with?("\x89PNG\r\n\x1a\n".b)
+
+        width, height = png[16, 8].unpack('N2')
+        [{ src: "data:image/png;base64,#{[png].pack('m0')}", mimeType: 'image/png', sizes: ["#{width}x#{height}"] }].freeze
+      end
+    rescue StandardError => e
+      Rails.logger.warn("[redmine_mcp_plugin] icon not advertised: #{ICON_PATH}: #{e.class}: #{e.message}")
+      nil
+    end
 
     module_function
 
     def server_info
       { name: 'redmine-mcp-plugin', title: 'Redmine', version: RedmineMcpPlugin::VERSION }
+    end
+
+    # serverInfo for initialize and server/discover. _meta keeps the short form:
+    # the icon is kilobytes and would otherwise ride on every result.
+    def implementation
+      ICONS ? server_info.merge(icons: ICONS) : server_info
     end
 
     def capabilities
