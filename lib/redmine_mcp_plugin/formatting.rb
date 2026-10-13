@@ -23,6 +23,10 @@ module RedmineMcpPlugin
     PLAIN = 'Fields marked "Plain text" take no markup. Custom fields render only when ' \
             'get_issue_fields reports them rendered.'
 
+    # Company style, not a Redmine rule: told to the agent, never applied by the server.
+    DASHES = 'Write every dash as a plain hyphen-minus "-", never an en dash "–" or an em dash "—", ' \
+             'in rendered and plain-text fields alike.'
+
     module_function
 
     def name
@@ -31,7 +35,8 @@ module RedmineMcpPlugin
 
     def guide
       format = GUIDES[Setting.text_formatting.to_s]
-      format ? "#{format} #{PLAIN}" : 'No text field renders markup; write plain text everywhere.'
+      text   = format ? "#{format} #{PLAIN}" : 'No text field renders markup; write plain text everywhere.'
+      "#{text} #{DASHES}"
     end
   end
 end
