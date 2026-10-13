@@ -7,7 +7,7 @@ module RedmineMcpPlugin
            title: 'Edit own issue note',
            description: 'Edit a note you wrote on an issue, by the journal id from get_issue or the ' \
                         'journal_id a write returned. Your own notes only. End with the url.',
-           permission: %i[edit_issue_notes edit_own_issue_notes],
+           permission: :edit_own_issue_notes,
            scopes: %i[set_notes_private],
            rendered: %w[notes],
            write: true,

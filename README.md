@@ -74,14 +74,13 @@ sections.
 | `add_issue_notes` | Add notes | Issue tracking — **not** the "Add notes" under Contacts |
 | `log_time` | Log spent time | Time tracking — **not** "Log spent time for other users" |
 | `set_notes_private` | Set notes as private | Issue tracking |
-| `edit_issue_notes` | Edit notes | Issue tracking |
 | `edit_own_issue_notes` | Edit own notes | Issue tracking |
 | `manage_subtasks` | Manage subtasks | Issue tracking |
 | `view_news` | View news | News |
 | `manage_news` | Manage news | News |
 
 The first five are advertised in read-only mode, which is the default, and are all an application
-needs while the server stays read-only. The last eleven are advertised only once read-only mode is
+needs while the server stays read-only. The last ten are advertised only once read-only mode is
 switched off. `set_notes_private` and `manage_subtasks` gate no tool: `add_issue_note` checks the first
 for `private_notes: true`, `create_issue` and `update_issue` the second for `parent`, and a permission a tool
 checks at runtime must be advertised, or no token can ever carry it.
@@ -104,7 +103,7 @@ Ours advertises the permissions the registered tools declare (`mcp_permissions`)
 check at runtime (`scopes`), dropping the write tools while the server is read-only, intersected
 with what Doorkeeper will accept. Read-only gives `view_project`, `view_issues`, `view_wiki_pages`,
 `view_time_entries` and `view_news`; with writes on, add `add_issues`, `add_issue_notes`,
-`edit_issues`, `edit_own_issues`, `edit_issue_notes`, `edit_own_issue_notes`, `log_time`, `set_notes_private`,
+`edit_issues`, `edit_own_issues`, `edit_own_issue_notes`, `log_time`, `set_notes_private`,
 `manage_subtasks` and `manage_news`. The OAuth application in
 Redmine must enable at least these; it may enable more. The same file probes Doorkeeper for PKCE support rather than
 assuming it, and advertises `S256` only — never `plain`, which MCP clients may not select.
@@ -226,6 +225,9 @@ people's notes. This is a product requirement, and the refusal names it ("You ca
 notes") rather than using the permission wording, because the cause is our rule, not a Redmine
 permission. Everything else is core's: the journal is found through `Journal.visible`, the right
 through `Journal#editable_by?`, and a note saved blank is refused because Redmine would delete it.
+The tool is gated on `edit_own_issue_notes` and only that scope is advertised, so Redmine itself
+refuses other people's notes and our check is a second guard. A role with "Edit notes" but without
+"Edit own notes" will not see the tool; the remedy is to tick "Edit own notes" on that role.
 
 ## Tools
 
@@ -247,7 +249,7 @@ while read-only mode is on, which is the default.
 | `create_issue` (write) | `add_issues`, on the requested tracker, plus `manage_subtasks` for `parent` |
 | `update_issue` (write) | `edit_issues`, or `edit_own_issues` on one's own issue, on the issue's tracker, plus `manage_subtasks` for `parent` |
 | `add_issue_note` (write) | `add_issue_notes`, on the issue's tracker, plus `set_notes_private` for private notes |
-| `update_issue_note` (write) | `edit_issue_notes` or `edit_own_issue_notes`; only notes the caller wrote, plus `set_notes_private` to change privacy |
+| `update_issue_note` (write) | `edit_own_issue_notes`; only notes the caller wrote, plus `set_notes_private` to change privacy |
 | `log_time` (write) | `log_time`. Always for the authenticated user |
 | `create_news` (write) | `manage_news`. Publishes at once and, when `news_added` is a notified event, emails project members and news watchers; the tool tells the agent to get explicit confirmation first |
 | `update_news` (write) | `manage_news`. Editing sends no email |
