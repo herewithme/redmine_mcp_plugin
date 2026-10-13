@@ -23,8 +23,9 @@ module RedmineMcpPlugin
 
       # `scopes` are permissions the tool checks beyond the one that gates it;
       # they are advertised so a token can carry them, and gate nothing.
-      # `rendered` names the parameters Redmine passes through its text formatter.
-      def tool(name, title:, description:, schema:, permission: nil, scopes: [], rendered: [], write: false, destructive: false)
+      # `rendered` names the parameters Redmine passes through its text formatter,
+      # `plain` the ones it prints as they are; both get the dash rule when listed.
+      def tool(name, title:, description:, schema:, permission: nil, scopes: [], rendered: [], plain: [], write: false, destructive: false)
         @mcp_name        = name.to_s
         @mcp_title       = title
         @mcp_description = description
@@ -32,6 +33,7 @@ module RedmineMcpPlugin
         @mcp_permission  = permission
         @mcp_scopes      = scopes
         @mcp_rendered    = rendered
+        @mcp_plain       = plain
         @mcp_write       = write
         @mcp_destructive = destructive
       end
@@ -40,6 +42,7 @@ module RedmineMcpPlugin
       def destructive? = !!@mcp_destructive
       def mcp_scopes   = Array(@mcp_scopes)
       def mcp_rendered = Array(@mcp_rendered)
+      def mcp_plain    = Array(@mcp_plain)
 
       # Core grants some abilities through more than one permission, so any of
       # them admits the tool; the tool applies core's real rule per record.
@@ -77,12 +80,14 @@ module RedmineMcpPlugin
       # The format is a setting, so the suffix is added when the list is served,
       # not when the class loads. Validation keeps using the bare schema.
       def schema_with_format
-        return mcp_schema if mcp_rendered.empty?
+        return mcp_schema if mcp_rendered.empty? && mcp_plain.empty?
 
         properties = mcp_schema['properties'].to_h do |name, spec|
-          next [name, spec] unless mcp_rendered.include?(name)
+          suffix = Formatting.rendered_suffix if mcp_rendered.include?(name)
+          suffix = Formatting.plain_suffix    if mcp_plain.include?(name)
+          next [name, spec] unless suffix
 
-          [name, spec.merge('description' => "#{spec['description']} Rendered as #{Formatting.name}.".strip)]
+          [name, spec.merge('description' => "#{spec['description']} #{suffix}".strip)]
         end
         mcp_schema.merge('properties' => properties)
       end

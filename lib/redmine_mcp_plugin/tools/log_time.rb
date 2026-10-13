@@ -10,6 +10,7 @@ module RedmineMcpPlugin
                         'else. Activities differ per project: call list_enumerations with the project ' \
                         'to get the ones this project accepts. End with the url.',
            permission: :log_time,
+           plain: %w[comments],
            write: true,
            schema: {
              'type' => 'object',
@@ -21,7 +22,7 @@ module RedmineMcpPlugin
                'activity' => { 'type' => 'string',
                                'description' => 'Activity name, from list_enumerations for this project.' },
                'spent_on' => { 'type' => 'string', 'description' => 'ISO-8601 date. Defaults to today.' },
-               'comments' => { 'type' => 'string', 'description' => 'What the time was spent on. Plain text.' },
+               'comments' => { 'type' => 'string', 'description' => 'What the time was spent on.' },
                'custom_fields' => { 'type' => 'object',
                                     'description' => 'Custom field values keyed by numeric field id. Send the value, ' \
                                                      'never the label.' }

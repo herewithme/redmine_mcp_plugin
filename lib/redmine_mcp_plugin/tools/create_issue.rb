@@ -10,13 +10,14 @@ module RedmineMcpPlugin
            permission: :add_issues,
            scopes: %i[manage_subtasks],
            rendered: %w[description],
+           plain: %w[subject],
            write: true,
            schema: {
              'type' => 'object',
              'properties' => {
                'project' => { 'type' => %w[string integer],
                              'description' => 'Project identifier or numeric id.' },
-               'subject' => { 'type' => 'string', 'description' => 'Issue subject. Plain text.' },
+               'subject' => { 'type' => 'string', 'description' => 'Issue subject.' },
                'description' => { 'type' => 'string' },
                'tracker' => { 'type' => 'string',
                               'description' => 'Tracker name. Required when the project allows more than one.' },

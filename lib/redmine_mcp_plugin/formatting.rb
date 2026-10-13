@@ -12,8 +12,8 @@ module RedmineMcpPlugin
         'line for a heading; *bold*, _italic_; lines starting "* " for bullets and "# " for numbered ' \
         'lists; tables one row per line, "|_. Header |_. Header |" then "| cell | cell |"; @inline ' \
         'code@, or a block between <pre><code class="ruby"> and </code></pre>; links ' \
-        '"text":https://example.com; #123 links an issue. Markdown syntax (#, **, -, backticks, ' \
-        '[text](url)) does not render.',
+        '"text":https://example.com; #123 links an issue. Markdown syntax (# headings, **bold**, ' \
+        '"- " bullets, backticks, [text](url)) does not render.',
       'common_mark' =>
         'Text fields marked "Rendered as CommonMark Markdown" take GitHub-flavoured Markdown: # headings, ' \
         '**bold**, _italic_, "- " bullets and "1. " numbered lists, pipe tables with a |---| separator ' \
@@ -27,10 +27,25 @@ module RedmineMcpPlugin
     DASHES = 'Write every dash as a plain hyphen-minus "-", never an en dash "–" or an em dash "—", ' \
              'in rendered and plain-text fields alike.'
 
+    # The short form for parameter descriptions, paid on every request. A spaced
+    # hyphen is safe under Textile and CommonMark; a blank setting renders nothing.
+    DASH_RULE  = 'Dashes: plain "-"'
+    DASH_NEVER = 'never "–"/"—".'
+    SPACED_SAFE = %w[textile common_mark].freeze
+
     module_function
 
     def name
       NAMES.fetch(Setting.text_formatting.to_s, 'plain text')
+    end
+
+    def rendered_suffix
+      safe = SPACED_SAFE.include?(Setting.text_formatting.to_s) ? ' (" - " is safe)' : ''
+      "Rendered as #{name}. #{DASH_RULE}#{safe}, #{DASH_NEVER}"
+    end
+
+    def plain_suffix
+      "Plain text. #{DASH_RULE}, #{DASH_NEVER}"
     end
 
     def guide

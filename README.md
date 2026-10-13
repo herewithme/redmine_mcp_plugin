@@ -264,8 +264,12 @@ No markup is hard-coded. When `tools/list` is served the plugin reads `Setting.t
 appends "Rendered as Textile." (or CommonMark Markdown, or plain text) to every parameter Redmine
 passes through its text formatter: issue `description` and `notes`, news `description`. Parameters
 Redmine prints as they are say "Plain text.": issue `subject`, news `title` and `summary`, time entry
-`comments`. `get_issue_fields` flags each custom field `rendered` when its text formatting is on. The
-`initialize` instructions carry a short syntax guide for the format in force, read before every write.
+`comments`. `get_issue_fields` flags each custom field `rendered` when its text formatting is on. Both
+suffixes end with the company dash rule, a plain "-" only, and the rendered one says a spaced hyphen is
+safe, so the agent does not reach for an em dash to avoid Textile strikethrough. The `initialize`
+instructions also carry a syntax guide for the format in force, but claude.ai does not pass server
+instructions to the model (verified live: a fresh chat reports none), so on claude.ai the parameter
+descriptions are all the agent reads. The guide stays for clients that do pass them.
 
 Arguments are checked against each tool's declared schema. A value outside a declared `enum`, below a
 declared `minimum`, of the wrong type, or missing when required is refused rather than ignored.

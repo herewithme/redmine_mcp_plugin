@@ -9,14 +9,15 @@ module RedmineMcpPlugin
                         'End with the url.',
            permission: :manage_news,
            rendered: %w[description],
+           plain: %w[title summary],
            write: true,
            destructive: true,
            schema: {
              'type' => 'object',
              'properties' => {
                'news' => { 'type' => 'integer', 'description' => 'News id.' },
-               'title' => { 'type' => 'string', 'description' => 'Up to 60 characters. Plain text.' },
-               'summary' => { 'type' => 'string', 'description' => 'Up to 255 characters. Plain text.' },
+               'title' => { 'type' => 'string', 'description' => 'Up to 60 characters.' },
+               'summary' => { 'type' => 'string', 'description' => 'Up to 255 characters.' },
                'description' => { 'type' => 'string', 'description' => 'Body.' }
              },
              'required' => %w[news],

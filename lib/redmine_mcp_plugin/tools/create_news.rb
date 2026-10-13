@@ -10,14 +10,15 @@ module RedmineMcpPlugin
                         'and description and get explicit confirmation before calling. End with the url.',
            permission: :manage_news,
            rendered: %w[description],
+           plain: %w[title summary],
            write: true,
            schema: {
              'type' => 'object',
              'properties' => {
                'project' => { 'type' => %w[string integer],
                               'description' => 'Project identifier or numeric id.' },
-               'title' => { 'type' => 'string', 'description' => 'Up to 60 characters. Plain text.' },
-               'summary' => { 'type' => 'string', 'description' => 'Up to 255 characters, optional. Plain text.' },
+               'title' => { 'type' => 'string', 'description' => 'Up to 60 characters.' },
+               'summary' => { 'type' => 'string', 'description' => 'Up to 255 characters, optional.' },
                'description' => { 'type' => 'string', 'description' => 'Body.' }
              },
              'required' => %w[project title description],

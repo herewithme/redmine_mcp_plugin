@@ -13,13 +13,14 @@ module RedmineMcpPlugin
            permission: %i[edit_issues edit_own_issues],
            scopes: %i[manage_subtasks],
            rendered: %w[description notes],
+           plain: %w[subject],
            write: true,
            destructive: true,
            schema: {
              'type' => 'object',
              'properties' => {
                'issue' => { 'type' => 'integer', 'description' => 'Issue id.' },
-               'subject' => { 'type' => 'string', 'description' => 'Plain text.' },
+               'subject' => { 'type' => 'string' },
                'description' => { 'type' => 'string' },
                'status' => { 'type' => 'string',
                              'description' => 'Status name, from allowed_statuses in get_issue_fields.' },
