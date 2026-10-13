@@ -75,9 +75,11 @@ sections.
 | `log_time` | Log spent time | Time tracking — **not** "Log spent time for other users" |
 | `set_notes_private` | Set notes as private | Issue tracking |
 | `manage_subtasks` | Manage subtasks | Issue tracking |
+| `view_news` | View news | News |
+| `manage_news` | Manage news | News |
 
-The first four are advertised in read-only mode, which is the default, and are all an application
-needs while the server stays read-only. The last seven are advertised only once read-only mode is
+The first five are advertised in read-only mode, which is the default, and are all an application
+needs while the server stays read-only. The last nine are advertised only once read-only mode is
 switched off. `set_notes_private` and `manage_subtasks` gate no tool: `add_issue_note` checks the first
 for `private: true`, `create_issue` and `update_issue` the second for `parent`, and a permission a tool
 checks at runtime must be advertised, or no token can ever carry it.
@@ -98,9 +100,9 @@ failed with `invalid_scope` or granted far more than the tools use.
 
 Ours advertises the permissions the registered tools declare (`mcp_permissions`) and the ones they
 check at runtime (`scopes`), dropping the write tools while the server is read-only, intersected
-with what Doorkeeper will accept. Read-only gives `view_project`, `view_issues`, `view_wiki_pages`
-and `view_time_entries`; with writes on, add `add_issues`, `add_issue_notes`, `edit_issues`,
-`edit_own_issues`, `log_time`, `set_notes_private` and `manage_subtasks`. The OAuth application in
+with what Doorkeeper will accept. Read-only gives `view_project`, `view_issues`, `view_wiki_pages`,
+`view_time_entries` and `view_news`; with writes on, add `add_issues`, `add_issue_notes`,
+`edit_issues`, `edit_own_issues`, `log_time`, `set_notes_private`, `manage_subtasks` and `manage_news`. The OAuth application in
 Redmine must enable at least these; it may enable more. The same file probes Doorkeeper for PKCE support rather than
 assuming it, and advertises `S256` only — never `plain`, which MCP clients may not select.
 
@@ -225,6 +227,7 @@ while read-only mode is on, which is the default.
 | `search_issues`, `get_issue` | `view_issues` |
 | `list_queries` | `view_issues`. Saved queries, filtered by `IssueQuery.visible` |
 | `list_wiki_pages`, `get_wiki_page` | `view_wiki_pages` |
+| `list_news`, `get_news` | `view_news`. Filtered by `News.visible`; with a project, that project's own news, as core's index |
 | `list_enumerations` | none. Trackers, statuses, priorities, time entry activities |
 | `list_users` | none. Filtered by `Principal.visible` |
 | `list_time_entries` | `view_time_entries`. Totals, per-group hours and each entry's custom fields, filtered by `TimeEntry.visible` |
@@ -233,13 +236,15 @@ while read-only mode is on, which is the default.
 | `update_issue` (write) | `edit_issues`, or `edit_own_issues` on one's own issue, on the issue's tracker, plus `manage_subtasks` for `parent` |
 | `add_issue_note` (write) | `add_issue_notes`, on the issue's tracker, plus `set_notes_private` for private notes |
 | `log_time` (write) | `log_time`. Always for the authenticated user |
+| `create_news` (write) | `manage_news`. Publishes at once and, when `news_added` is a notified event, emails project members and news watchers; the tool tells the agent to get explicit confirmation first |
+| `update_news` (write) | `manage_news`. Editing sends no email |
 
 `get_issue` respects per-field custom field visibility and filters private notes by role, as above.
 `list_users` uses `Principal.visible` rather than `User.all`, which honours each role's
 `users_visibility` setting.
 
 Parameters use one shape per concept across tools: an issue is `issue`, a numeric id; a project is
-`project`, an identifier or numeric id; a person — `assigned_to`, `author`, `user` — is a user id from
+`project`, an identifier or numeric id; a news item is `news`; a person — `assigned_to`, `author`, `user` — is a user id from
 `list_users`, or `"me"`; `parent` is an issue id, and on `update_issue` the string `"none"` removes
 the parent. Filters that name a project, an issue, a version or a category through
 `filters` are authorised like the named parameters, so an invisible one is refused rather than
@@ -252,6 +257,15 @@ tracker or workflow does not let this user set; `log_time` does the same for cus
 the things core would drop silently and save the rest. A `parent` that is invisible, circular, or
 outside the cross-project subtasks setting is refused by cause, where core would say only "Parent task
 is invalid".
+
+### Text formatting
+
+No markup is hard-coded. When `tools/list` is served the plugin reads `Setting.text_formatting` and
+appends "Rendered as Textile." (or CommonMark Markdown, or plain text) to every parameter Redmine
+passes through its text formatter: issue `description` and `notes`, news `description`. Parameters
+Redmine prints as they are say "Plain text.": issue `subject`, news `title` and `summary`, time entry
+`comments`. `get_issue_fields` flags each custom field `rendered` when its text formatting is on. The
+`initialize` instructions carry a short syntax guide for the format in force, read before every write.
 
 Arguments are checked against each tool's declared schema. A value outside a declared `enum`, below a
 declared `minimum`, of the wrong type, or missing when required is refused rather than ignored.

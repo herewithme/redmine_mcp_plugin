@@ -19,6 +19,8 @@ module RedmineMcpPlugin
           Tools::GetIssue,
           Tools::ListWikiPages,
           Tools::GetWikiPage,
+          Tools::ListNews,
+          Tools::GetNews,
           Tools::ListEnumerations,
           Tools::ListUsers,
           Tools::ListTimeEntries,
@@ -26,7 +28,9 @@ module RedmineMcpPlugin
           Tools::CreateIssue,
           Tools::UpdateIssue,
           Tools::AddIssueNote,
-          Tools::LogTime
+          Tools::LogTime,
+          Tools::CreateNews,
+          Tools::UpdateNews
         ]
       end
 

@@ -23,13 +23,15 @@ module RedmineMcpPlugin
 
       # `scopes` are permissions the tool checks beyond the one that gates it;
       # they are advertised so a token can carry them, and gate nothing.
-      def tool(name, title:, description:, schema:, permission: nil, scopes: [], write: false, destructive: false)
+      # `rendered` names the parameters Redmine passes through its text formatter.
+      def tool(name, title:, description:, schema:, permission: nil, scopes: [], rendered: [], write: false, destructive: false)
         @mcp_name        = name.to_s
         @mcp_title       = title
         @mcp_description = description
         @mcp_schema      = schema
         @mcp_permission  = permission
         @mcp_scopes      = scopes
+        @mcp_rendered    = rendered
         @mcp_write       = write
         @mcp_destructive = destructive
       end
@@ -37,6 +39,7 @@ module RedmineMcpPlugin
       def write?       = !!@mcp_write
       def destructive? = !!@mcp_destructive
       def mcp_scopes   = Array(@mcp_scopes)
+      def mcp_rendered = Array(@mcp_rendered)
 
       # Core grants some abilities through more than one permission, so any of
       # them admits the tool; the tool applies core's real rule per record.
@@ -59,7 +62,7 @@ module RedmineMcpPlugin
           name: mcp_name,
           title: mcp_title,
           description: mcp_description,
-          inputSchema: mcp_schema,
+          inputSchema: schema_with_format,
           # Clients read these to decide whether a call needs confirming by the
           # user. Omitting them makes a read-only server look exactly like a
           # destructive one, so every lookup gets a prompt.
@@ -69,6 +72,19 @@ module RedmineMcpPlugin
             idempotentHint: !write?
           }
         }
+      end
+
+      # The format is a setting, so the suffix is added when the list is served,
+      # not when the class loads. Validation keeps using the bare schema.
+      def schema_with_format
+        return mcp_schema if mcp_rendered.empty?
+
+        properties = mcp_schema['properties'].to_h do |name, spec|
+          next [name, spec] unless mcp_rendered.include?(name)
+
+          [name, spec.merge('description' => "#{spec['description']} Rendered as #{Formatting.name}.".strip)]
+        end
+        mcp_schema.merge('properties' => properties)
       end
     end
 
@@ -189,6 +205,21 @@ module RedmineMcpPlugin
       issue
     end
 
+    def fetch_news(id)
+      news = News.visible(user).find_by(id: id.to_i)
+      raise ToolError, "No visible news with id #{id.inspect}" if news.nil?
+
+      news
+    end
+
+    # allowed_to? is false for a disabled module, which would read as a
+    # permissions problem; name the real cause instead.
+    def require_module!(project, name)
+      return if project.module_enabled?(name)
+
+      raise ToolError, "The #{name} module is not enabled for project #{project.identifier}"
+    end
+
     # Both wiki tools need these three checks, in this order.
     #
     # The module check comes first because allowed_to? returns false for a
@@ -198,10 +229,7 @@ module RedmineMcpPlugin
     # nothing: get_project already returns enabled_modules to anyone who can
     # see the project.
     def fetch_wiki(project)
-      unless project.module_enabled?(:wiki)
-        raise ToolError, "The wiki module is not enabled for project #{project.identifier}"
-      end
-
+      require_module!(project, :wiki)
       authorize!(:view_wiki_pages, project)
 
       wiki = project.wiki
@@ -226,6 +254,12 @@ module RedmineMcpPlugin
       time&.iso8601
     end
 
+    def iso_date(value, name)
+      Date.iso8601(value.to_s).iso8601
+    rescue ArgumentError
+      raise ToolError, "#{name} must be an ISO-8601 date, got #{value.inspect}"
+    end
+
     # Built the way Redmine builds links in its notification emails, not from
     # the request. nil when unset: a missing setting must not fail a done write.
     def absolute_url(helper, *args)
@@ -244,11 +278,12 @@ module RedmineMcpPlugin
 
     # Core drops what the role, tracker or workflow forbids and saves the rest;
     # name it and stop instead.
-    def refuse_unsettable!(issue, attributes)
-      unsafe = attributes.keys.reject { |key| issue.safe_attribute?(key, user) }
+    def refuse_unsettable!(record, attributes)
+      unsafe = attributes.keys.reject { |key| record.safe_attribute?(key, user) }
       return if unsafe.empty?
 
-      raise ToolError, "Cannot set #{unsafe.map { |key| PARAMETER_NAMES.fetch(key, key) }.join(', ')} on this issue"
+      names = unsafe.map { |key| PARAMETER_NAMES.fetch(key, key) }.join(', ')
+      raise ToolError, "Cannot set #{names} on this #{record.class.model_name.human.downcase}"
     end
 
     # Core's own rule, which also admits the author and the current assignee.
@@ -307,6 +342,27 @@ module RedmineMcpPlugin
         parent: issue.parent_id,
         custom_fields: saved_custom_fields(issue, custom_field_ids),
         url: absolute_url(:issue_url, issue)
+      }
+    end
+
+    # --- news ---------------------------------------------------------------
+
+    def news_attributes(arguments)
+      %w[title summary description].each_with_object({}) do |field, attributes|
+        attributes[field] = arguments[field].to_s unless arguments[field].nil?
+      end
+    end
+
+    def news_state(news)
+      {
+        id: news.id,
+        title: news.title,
+        summary: news.summary,
+        author: news.author&.name,
+        created_on: iso(news.created_on),
+        project_identifier: news.project&.identifier,
+        comments_count: news.comments_count,
+        url: absolute_url(:news_url, news)
       }
     end
 

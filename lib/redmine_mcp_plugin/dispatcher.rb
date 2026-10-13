@@ -6,6 +6,13 @@ module RedmineMcpPlugin
   # Knows nothing about HTTP. The controller owns authentication, the Origin
   # check and status codes; this owns the protocol methods.
   class Dispatcher
+    INSTRUCTIONS = 'Redmine over MCP. Every tool runs as the authenticated Redmine user and is ' \
+                   'limited by that user\'s project permissions, and by the OAuth2 scopes of the ' \
+                   'presented token where one is used. Results are already filtered; an empty ' \
+                   'result means nothing visible matched, not that nothing exists. After a write, ' \
+                   'report the saved state from the reply, not what was requested, and ask the ' \
+                   'user to check the returned url.'
+
     # 2026-07-28 dropped initialize/notifications/initialized and added
     # server/discover. The older revisions are still what shipped clients speak,
     # so both sets are answered.
@@ -70,12 +77,8 @@ module RedmineMcpPlugin
         protocolVersion: Protocol.negotiate_initialize(requested),
         capabilities: Protocol.capabilities,
         serverInfo: Protocol.implementation,
-        instructions: 'Redmine over MCP. Every tool runs as the authenticated Redmine user and is ' \
-                      'limited by that user\'s project permissions, and by the OAuth2 scopes of the ' \
-                      'presented token where one is used. Results are already filtered; an empty ' \
-                      'result means nothing visible matched, not that nothing exists. After a write, ' \
-                      'report the saved state from the reply, not what was requested, and ask the ' \
-                      'user to check the returned url.'
+        # The formatting guide follows the setting, so it is built per call.
+        instructions: "#{INSTRUCTIONS} #{Formatting.guide}"
       }
     end
 

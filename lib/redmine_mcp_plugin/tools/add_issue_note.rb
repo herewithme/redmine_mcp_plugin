@@ -8,6 +8,7 @@ module RedmineMcpPlugin
            description: 'Append a note (comment) to an existing issue. End with the url.',
            permission: :add_issue_notes,
            scopes: %i[set_notes_private],
+           rendered: %w[notes],
            write: true,
            schema: {
              'type' => 'object',

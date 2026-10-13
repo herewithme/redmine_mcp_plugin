@@ -9,13 +9,14 @@ module RedmineMcpPlugin
                         'custom fields this user may set and which values are allowed. End with the url.',
            permission: :add_issues,
            scopes: %i[manage_subtasks],
+           rendered: %w[description],
            write: true,
            schema: {
              'type' => 'object',
              'properties' => {
                'project' => { 'type' => %w[string integer],
                              'description' => 'Project identifier or numeric id.' },
-               'subject' => { 'type' => 'string', 'description' => 'Issue subject.' },
+               'subject' => { 'type' => 'string', 'description' => 'Issue subject. Plain text.' },
                'description' => { 'type' => 'string' },
                'tracker' => { 'type' => 'string',
                               'description' => 'Tracker name. Required when the project allows more than one.' },

@@ -196,11 +196,5 @@ module RedmineMcpPlugin
       label, stored = value.is_a?(Array) ? value : [value, value]
       { value: stored.to_s, label: label.to_s }
     end
-
-    def iso_date(value, name)
-      Date.iso8601(value.to_s).iso8601
-    rescue ArgumentError
-      raise ToolError, "#{name} must be an ISO-8601 date, got #{value.inspect}"
-    end
   end
 end

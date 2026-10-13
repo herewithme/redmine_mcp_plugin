@@ -102,6 +102,8 @@ module RedmineMcpPlugin
             # user on this tracker alone.
             required: field.is_required? || required.include?(field.id.to_s),
             multiple: field.multiple?,
+            # True for a long text field with text formatting on: its value takes markup.
+            rendered: field.full_text_formatting?,
             default_value: field.default_value,
             possible_values: possible_values_for(field, issue)
           }
