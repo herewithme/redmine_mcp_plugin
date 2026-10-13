@@ -7,8 +7,8 @@ module RedmineMcpPlugin
     class SearchIssues < Tool
       include QueryTool
 
-      NAMED_FILTERS = { 'status' => 'status_id', 'query' => 'any_searchable', 'tracker' => 'tracker_id',
-                        'priority' => 'priority_id', 'version' => 'fixed_version_id',
+      NAMED_FILTERS = { 'status' => 'status_id', 'search' => 'any_searchable', 'tracker' => 'tracker_id',
+                        'priority' => 'priority_id', 'fixed_version' => 'fixed_version_id',
                         'assigned_to' => 'assigned_to_id', 'author' => 'author_id',
                         'created_since' => 'created_on', 'updated_since' => 'updated_on',
                         'due_before' => 'due_date' }.freeze
@@ -42,12 +42,12 @@ module RedmineMcpPlugin
                                'description' => 'Return the available filters and sortable fields instead of issues.' },
                'project' => { 'type' => %w[string integer],
                              'description' => 'Restrict to one project (identifier or numeric id).' },
-               'query' => { 'type' => 'string', 'description' => 'Text searched across subject, description and notes.' },
+               'search' => { 'type' => 'string', 'description' => 'Text searched across subject, description and notes.' },
                'status' => { 'type' => 'string', 'enum' => %w[open closed all],
                              'description' => 'Issue status filter. Defaults to open.' },
                'tracker' => { 'type' => 'string', 'description' => 'Tracker name, e.g. Bug.' },
                'priority' => { 'type' => 'string', 'description' => 'Priority name.' },
-               'version' => { 'type' => 'string', 'description' => 'Target version name. Needs project.' },
+               'fixed_version' => { 'type' => 'string', 'description' => 'Target version name. Needs project.' },
                'assigned_to' => { 'type' => %w[integer string],
                                   'description' => 'Assignee: a user id from list_users, or "me".' },
                'author' => { 'type' => %w[integer string],
@@ -56,7 +56,7 @@ module RedmineMcpPlugin
                'updated_since' => { 'type' => 'string', 'format' => 'date',
                                     'description' => 'Only issues updated on or after this ISO-8601 date.' },
                'due_before' => { 'type' => 'string', 'description' => 'Only issues due on or before this ISO-8601 date.' },
-               'query_id' => { 'type' => 'integer', 'description' => 'Id of a saved query to run, from list_queries.' },
+               'query' => { 'type' => 'integer', 'description' => 'Id of a saved query to run, from list_queries.' },
                'filters' => { 'type' => 'object',
                               'description' => 'Any other filter, keyed by field name from describe. A value may be ' \
                                                '{"operator": "><", "values": ["1", "5"]}, or a bare string or array, ' \
@@ -84,7 +84,7 @@ module RedmineMcpPlugin
         # controller sets them to the same object, so assert it rather than trust it.
         raise ToolError, 'You do not have permission to do that' unless User.current == user
 
-        saved = arguments['query_id'].present?
+        saved = arguments['query'].present?
         query = build_query(arguments, project)
         return describe(query) if arguments['describe']
 
@@ -108,10 +108,10 @@ module RedmineMcpPlugin
       def build_query(arguments, project)
         # A name because Query validates its presence; core does the same for
         # the transient query behind its own issue list.
-        return IssueQuery.new(name: '_', project: project) if arguments['query_id'].blank?
+        return IssueQuery.new(name: '_', project: project) if arguments['query'].blank?
 
-        query = IssueQuery.visible(user).find_by(id: arguments['query_id'].to_i)
-        raise ToolError, "No visible saved query with id #{arguments['query_id'].inspect}" if query.nil?
+        query = IssueQuery.visible(user).find_by(id: arguments['query'].to_i)
+        raise ToolError, "No visible saved query with id #{arguments['query'].inspect}" if query.nil?
 
         # Before anything memoises available_filters, which vary by project.
         query.project = project if project
@@ -129,13 +129,13 @@ module RedmineMcpPlugin
         when 'open'   then set_filter!(query, 'status_id', 'o')
         end
 
-        set_filter!(query, 'any_searchable', '~', arguments['query']) if arguments['query'].present?
+        set_filter!(query, 'any_searchable', '~', arguments['search']) if arguments['search'].present?
         set_filter!(query, 'assigned_to_id', '=', user_ref!(arguments['assigned_to'], 'assigned_to')) if arguments['assigned_to'].present?
         set_filter!(query, 'author_id', '=', user_ref!(arguments['author'], 'author'))                if arguments['author'].present?
 
         set_filter!(query, 'tracker_id', '=', tracker_id(arguments['tracker']))   if arguments['tracker'].present?
         set_filter!(query, 'priority_id', '=', priority_id(arguments['priority'])) if arguments['priority'].present?
-        set_filter!(query, 'fixed_version_id', '=', version_id(project, arguments['version'])) if arguments['version'].present?
+        set_filter!(query, 'fixed_version_id', '=', fixed_version_id(project, arguments['fixed_version'])) if arguments['fixed_version'].present?
 
         set_filter!(query, 'created_on', '>=', iso_date(arguments['created_since'], 'created_since')) if arguments['created_since'].present?
         set_filter!(query, 'updated_on', '>=', iso_date(arguments['updated_since'], 'updated_since')) if arguments['updated_since'].present?
@@ -160,8 +160,8 @@ module RedmineMcpPlugin
         priority.id
       end
 
-      def version_id(project, name)
-        raise ToolError, 'version needs a project' if project.nil?
+      def fixed_version_id(project, name)
+        raise ToolError, 'fixed_version needs a project' if project.nil?
 
         version = project.shared_versions.find_by(name: name.to_s)
         raise ToolError, "Project #{project.identifier} has no version named #{name.inspect}" if version.nil?

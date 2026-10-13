@@ -25,7 +25,7 @@ module RedmineMcpPlugin
                'assigned_to' => { 'type' => %w[integer string],
                                   'description' => 'User id from list_users, or "me".' },
                'parent' => { 'type' => 'integer', 'description' => 'Parent issue id.' },
-               'custom_fields' => { 'type' => 'object',
+               'custom_field_values' => { 'type' => 'object',
                                     'description' => 'Custom field values keyed by numeric field id, e.g. {"7": "3"}. ' \
                                                      'Send the value from get_issue_fields possible_values, never the label.' }
              },

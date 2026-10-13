@@ -29,7 +29,7 @@ module RedmineMcpPlugin
                'priority' => { 'type' => 'string', 'description' => 'Priority name.' },
                'parent' => { 'type' => %w[integer string],
                              'description' => 'Parent issue id, or "none" to remove the parent.' },
-               'custom_fields' => { 'type' => 'object',
+               'custom_field_values' => { 'type' => 'object',
                                     'description' => 'Custom field values keyed by numeric field id, e.g. {"7": "3"}. ' \
                                                      'Send the value from get_issue_fields possible_values, never the label.' },
                'notes' => { 'type' => 'string', 'description' => 'Note recorded with this change.' }

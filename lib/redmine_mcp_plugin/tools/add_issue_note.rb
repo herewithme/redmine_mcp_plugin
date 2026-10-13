@@ -15,7 +15,7 @@ module RedmineMcpPlugin
              'properties' => {
                'issue' => { 'type' => 'integer', 'description' => 'Issue id.' },
                'notes' => { 'type' => 'string', 'description' => 'The note text.' },
-               'private' => { 'type' => 'boolean',
+               'private_notes' => { 'type' => 'boolean',
                               'description' => 'Mark the note private. Requires the set_notes_private permission.' }
              },
              'required' => %w[issue notes],
@@ -33,7 +33,7 @@ module RedmineMcpPlugin
         # there is none, so the journal has to exist before the note is marked.
         issue.init_journal(user, arguments['notes'].to_s)
 
-        if arguments['private']
+        if arguments['private_notes']
           authorize!(:set_notes_private, issue.project)
           issue.private_notes = true
         end

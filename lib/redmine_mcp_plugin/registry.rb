@@ -28,6 +28,7 @@ module RedmineMcpPlugin
           Tools::CreateIssue,
           Tools::UpdateIssue,
           Tools::AddIssueNote,
+          Tools::UpdateIssueNote,
           Tools::LogTime,
           Tools::CreateNews,
           Tools::UpdateNews

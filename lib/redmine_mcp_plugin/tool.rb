@@ -267,10 +267,10 @@ module RedmineMcpPlugin
 
     # Built the way Redmine builds links in its notification emails, not from
     # the request. nil when unset: a missing setting must not fail a done write.
-    def absolute_url(helper, *args)
+    def absolute_url(helper, *args, **options)
       return nil if Setting.host_name.blank?
 
-      Rails.application.routes.url_helpers.public_send(helper, *args, **Mailer.default_url_options)
+      Rails.application.routes.url_helpers.public_send(helper, *args, **options, **Mailer.default_url_options)
     end
 
     # --- writes -------------------------------------------------------------
@@ -278,7 +278,7 @@ module RedmineMcpPlugin
     # One table for the refusal names and for get_issue_fields' settable list.
     WRITE_ATTRIBUTES = { 'subject' => 'subject', 'description' => 'description', 'status' => 'status_id',
                          'priority' => 'priority_id', 'assigned_to' => 'assigned_to_id',
-                         'parent' => 'parent_issue_id', 'custom_fields' => 'custom_field_values' }.freeze
+                         'parent' => 'parent_issue_id', 'custom_field_values' => 'custom_field_values' }.freeze
     PARAMETER_NAMES  = WRITE_ATTRIBUTES.invert.freeze
 
     # Core drops what the role, tracker or workflow forbids and saves the rest;
@@ -382,20 +382,20 @@ module RedmineMcpPlugin
 
     # SchemaValidator does not walk into an object, so the shape is checked here.
     def custom_field_values_from(arguments)
-      raw = arguments['custom_fields']
+      raw = arguments['custom_field_values']
       return nil if raw.blank?
-      raise ToolError, 'custom_fields must be an object keyed by numeric custom field id' unless raw.is_a?(Hash)
+      raise ToolError, 'custom_field_values must be an object keyed by numeric custom field id' unless raw.is_a?(Hash)
 
       raw.each_with_object({}) do |(id, value), out|
-        raise ToolError, "custom_fields key #{id.inspect} is not a numeric custom field id" unless /\A\d+\z/.match?(id.to_s)
-        raise ToolError, "custom_fields[#{id}] must be a string, a number, or an array of them" if value.is_a?(Hash)
+        raise ToolError, "custom_field_values key #{id.inspect} is not a numeric custom field id" unless /\A\d+\z/.match?(id.to_s)
+        raise ToolError, "custom_field_values[#{id}] must be a string, a number, or an array of them" if value.is_a?(Hash)
 
         out[id.to_s] = value.is_a?(Array) ? value.map(&:to_s) : value.to_s
       end
     end
 
     def custom_field_ids(arguments)
-      arguments['custom_fields'].is_a?(Hash) ? arguments['custom_fields'].keys : []
+      arguments['custom_field_values'].is_a?(Hash) ? arguments['custom_field_values'].keys : []
     end
   end
 end

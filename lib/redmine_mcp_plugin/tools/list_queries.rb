@@ -6,7 +6,7 @@ module RedmineMcpPlugin
       tool 'list_queries',
            title: 'List saved issue queries',
            description: 'List the saved issue queries visible to the authenticated user. Pass the id ' \
-                        'of one to search_issues as query_id to run it, optionally narrowing it further.',
+                        'of one to search_issues as query to run it, optionally narrowing it further.',
            permission: :view_issues,
            schema: {
              'type' => 'object',
