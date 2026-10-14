@@ -87,6 +87,7 @@ class McpMetadataController < ApplicationController
     # Only what this server's tools declare or check. Advertising every scope
     # Doorkeeper knows would have a client request ~200, `admin` among them.
     scopes = RedmineMcpPlugin::Registry.all
+                                       .select(&:installed?)
                                        .reject { |tool| tool.write? && RedmineMcpPlugin::Settings.read_only? }
                                        .flat_map { |tool| tool.mcp_permissions + tool.mcp_scopes }
                                        .map(&:to_s)

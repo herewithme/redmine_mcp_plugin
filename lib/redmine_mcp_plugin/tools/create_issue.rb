@@ -5,29 +5,39 @@ module RedmineMcpPlugin
     class CreateIssue < Tool
       tool 'create_issue',
            title: 'Create issue',
-           description: 'Create a new issue in a project. Call get_issue_fields first to learn which ' \
-                        'custom fields this user may set and which values are allowed. End with the url.',
+           description: 'Create an issue. Call get_issue_fields first for what this user may set. ' \
+                        '"none" clears an optional date or reference. End with the url.',
            permission: :add_issues,
-           scopes: %i[manage_subtasks],
-           rendered: %w[description],
+           scopes: %i[manage_subtasks add_issue_watchers set_issues_private set_own_issues_private],
+           plugin_scopes: { redmine_checklists: %i[edit_checklists], redmineup_tags: %i[edit_tags create_tags] },
+           plugin_properties: { redmine_checklists: %w[checklists], redmineup_tags: %w[tag_list] },
+           rendered: %w[description checklists],
            plain: %w[subject],
            write: true,
            schema: {
              'type' => 'object',
              'properties' => {
-               'project' => { 'type' => %w[string integer],
-                             'description' => 'Project identifier or numeric id.' },
-               'subject' => { 'type' => 'string', 'description' => 'Issue subject.' },
+               'project' => { 'type' => %w[string integer], 'description' => 'Project identifier or numeric id.' },
+               'subject' => { 'type' => 'string' },
                'description' => { 'type' => 'string' },
                'tracker' => { 'type' => 'string',
                               'description' => 'Tracker name. Required when the project allows more than one.' },
-               'priority' => { 'type' => 'string', 'description' => 'Priority name. Defaults to the Redmine default.' },
-               'assigned_to' => { 'type' => %w[integer string],
-                                  'description' => 'User id from list_users, or "me".' },
+               'status' => { 'type' => 'string', 'description' => 'Status name.' },
+               'priority' => { 'type' => 'string', 'description' => 'Priority name.' },
+               'category' => { 'type' => %w[string integer], 'description' => 'Name or id.' },
+               'fixed_version' => { 'type' => %w[string integer], 'description' => 'Target version, name or id.' },
+               'assigned_to' => { 'type' => %w[integer string], 'description' => 'User id, or "me".' },
                'parent' => { 'type' => 'integer', 'description' => 'Parent issue id.' },
+               'start_date' => { 'type' => 'string', 'description' => 'YYYY-MM-DD' },
+               'due_date' => { 'type' => 'string', 'description' => 'YYYY-MM-DD' },
+               'done_ratio' => { 'type' => 'integer' },
+               'estimated_hours' => { 'type' => 'number' },
+               'is_private' => { 'type' => 'boolean' },
+               'watcher_users' => { 'type' => 'array', 'description' => 'User or group ids, or "me".' },
+               'checklists' => { 'type' => 'array', 'description' => 'Item subjects.' },
+               'tag_list' => { 'type' => 'array', 'description' => 'Tag names.' },
                'custom_field_values' => { 'type' => 'object',
-                                    'description' => 'Custom field values keyed by numeric field id, e.g. {"7": "3"}. ' \
-                                                     'Send the value from get_issue_fields possible_values, never the label.' }
+                                          'description' => 'By numeric field id, e.g. {"7": "3"}; the value, never the label.' }
              },
              'required' => %w[project subject],
              'additionalProperties' => false
@@ -41,55 +51,31 @@ module RedmineMcpPlugin
 
         issue = Issue.new(project: project, author: user)
         # The tracker decides the custom fields and the default status, so it goes first.
-        issue.tracker = tracker_for(project, issue.allowed_target_trackers(user), arguments['tracker'])
+        issue.tracker = tracker_for(issue, arguments['tracker'])
 
-        attributes = { 'subject' => arguments['subject'].to_s }
-        # Only when sent: a tracker may disable the field, and an absent one must not trip the check.
-        attributes['description'] = arguments['description'].to_s unless arguments['description'].nil?
-
-        if (priority_name = arguments['priority'].presence)
-          priority = IssuePriority.active.find_by(name: priority_name.to_s)
-          raise ToolError, "No active priority named #{priority_name.inspect}" if priority.nil?
-
-          attributes['priority_id'] = priority.id
+        attributes = issue_attributes_from(issue, arguments.except('tracker'))
+        if plugin?(:redmine_checklists) && !arguments['checklists'].nil?
+          attributes['checklists_attributes'] = checklist_attributes(project, arguments['checklists'])
         end
-
-        attributes['assigned_to_id'] = assignee_id(issue, arguments['assigned_to']) if arguments['assigned_to'].present?
-        # The key alone, so the permission refusal comes before the parent's own checks.
-        attributes['parent_issue_id'] = arguments['parent'] unless arguments['parent'].nil?
-
-        if (values = custom_field_values_from(arguments))
-          attributes['custom_field_values'] = values
-        end
+        tags = plugin?(:redmineup_tags) ? tag_attributes(issue, arguments) : {}
 
         refuse_unknown_custom_fields!(issue, custom_field_ids(arguments))
         refuse_unsettable!(issue, attributes)
+        refuse_status!(issue, attributes['status_id'], arguments['status']) if attributes.key?('status_id')
+        refuse_done_ratio!(attributes)
         attributes['parent_issue_id'] = parent_attribute(issue, arguments['parent']) if attributes.key?('parent_issue_id')
-        issue.safe_attributes = attributes
+
+        # Indifferent access: the tags plugin reads its keys as symbols.
+        issue.safe_attributes = attributes.merge(tags).with_indifferent_access
         raise ToolError, "Could not create issue: #{issue.errors.full_messages.join('; ')}" unless issue.save
 
-        issue_state(issue, custom_field_ids(arguments))
+        issue_state(issue, arguments)
       end
 
-      # add_issues is granted per tracker, and core would silently substitute
-      # a permitted one -- which an agent reports as success. Refuse instead.
-      def tracker_for(project, allowed, name)
-        if name.blank?
-          trackers = allowed.to_a
-          raise ToolError, 'You do not have permission to do that' if trackers.empty?
-          return trackers.first if trackers.one?
-
-          raise ToolError, "Pass tracker. #{project.identifier} allows: #{trackers.map(&:name).join(', ')}"
-        end
-
-        tracker = project.trackers.find_by(name: name.to_s)
-        raise ToolError, "Project #{project.identifier} has no tracker named #{name.inspect}" if tracker.nil?
-        unless allowed.where(id: tracker.id).exists?
-          raise ToolError, 'You do not have permission to create issues with tracker ' \
-                           "#{name.inspect} in project #{project.identifier}"
-        end
-
-        tracker
+      # Items are created with the issue through the plugin's own nested attributes.
+      def checklist_attributes(project, subjects)
+        authorize!(:edit_checklists, project)
+        Array(subjects).map(&:to_s).reject(&:blank?).map { |subject| { 'subject' => subject } }
       end
     end
   end

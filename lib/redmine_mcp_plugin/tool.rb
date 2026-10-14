@@ -25,24 +25,39 @@ module RedmineMcpPlugin
       # they are advertised so a token can carry them, and gate nothing.
       # `rendered` names the parameters Redmine passes through its text formatter,
       # `plain` the ones it prints as they are; both get the dash rule when listed.
-      def tool(name, title:, description:, schema:, permission: nil, scopes: [], rendered: [], plain: [], write: false, destructive: false)
-        @mcp_name        = name.to_s
-        @mcp_title       = title
-        @mcp_description = description
-        @mcp_schema      = schema
-        @mcp_permission  = permission
-        @mcp_scopes      = scopes
-        @mcp_rendered    = rendered
-        @mcp_plain       = plain
-        @mcp_write       = write
-        @mcp_destructive = destructive
+      # `plugin` ties the whole tool to an installed plugin, `plugin_properties`
+      # and `plugin_scopes` tie single parameters and scopes to one.
+      def tool(name, title:, description:, schema:, permission: nil, scopes: [], rendered: [], plain: [],
+               write: false, destructive: false, plugin: nil, plugin_properties: {}, plugin_scopes: {})
+        @mcp_name          = name.to_s
+        @mcp_title         = title
+        @mcp_description   = description
+        @mcp_schema        = schema
+        @mcp_permission    = permission
+        @mcp_scopes        = scopes
+        @mcp_rendered      = rendered
+        @mcp_plain         = plain
+        @mcp_write         = write
+        @mcp_destructive   = destructive
+        @mcp_plugin        = plugin
+        @plugin_properties = plugin_properties
+        @plugin_scopes     = plugin_scopes
       end
 
       def write?       = !!@mcp_write
       def destructive? = !!@mcp_destructive
-      def mcp_scopes   = Array(@mcp_scopes)
       def mcp_rendered = Array(@mcp_rendered)
       def mcp_plain    = Array(@mcp_plain)
+
+      # Read per call, never at class load: this plugin boots before some of
+      # the plugins it looks for.
+      def plugin?(id) = Redmine::Plugin.installed?(id)
+
+      def installed? = @mcp_plugin.nil? || plugin?(@mcp_plugin)
+
+      def mcp_scopes
+        Array(@mcp_scopes) + @plugin_scopes.to_h.select { |id, _scopes| plugin?(id) }.values.flatten
+      end
 
       # Core grants some abilities through more than one permission, so any of
       # them admits the tool; the tool applies core's real rule per record.
@@ -54,6 +69,7 @@ module RedmineMcpPlugin
       # the caller could never successfully call is friendlier than letting a
       # model discover it and fail.
       def available_to?(user)
+        return false unless installed?
         return false if write? && Settings.read_only?
         return true  if mcp_permissions.empty?
 
@@ -77,19 +93,29 @@ module RedmineMcpPlugin
         }
       end
 
+      # The schema minus the parameters of plugins that are not installed. The
+      # served list and validation both use it, so an absent plugin leaves nothing.
+      def effective_schema
+        absent = @plugin_properties.to_h.reject { |id, _names| plugin?(id) }.values.flatten
+        return mcp_schema if absent.empty?
+
+        mcp_schema.merge('properties' => mcp_schema['properties'].except(*absent))
+      end
+
       # The format is a setting, so the suffix is added when the list is served,
       # not when the class loads. Validation keeps using the bare schema.
       def schema_with_format
-        return mcp_schema if mcp_rendered.empty? && mcp_plain.empty?
+        schema = effective_schema
+        return schema if mcp_rendered.empty? && mcp_plain.empty?
 
-        properties = mcp_schema['properties'].to_h do |name, spec|
+        properties = schema['properties'].to_h do |name, spec|
           suffix = Formatting.rendered_suffix if mcp_rendered.include?(name)
           suffix = Formatting.plain_suffix    if mcp_plain.include?(name)
           next [name, spec] unless suffix
 
           [name, spec.merge('description' => "#{spec['description']} #{suffix}".strip)]
         end
-        mcp_schema.merge('properties' => properties)
+        schema.merge('properties' => properties)
       end
     end
 
@@ -121,10 +147,11 @@ module RedmineMcpPlugin
       arguments ||= {}
       # The schemas are a contract with the caller, not a comment. Checked here
       # rather than in each tool so a tool cannot forget.
-      SchemaValidator.validate!(klass.mcp_schema, arguments)
+      schema = klass.effective_schema
+      SchemaValidator.validate!(schema, arguments)
       # And normalised, so a tool never has to decide what the string "false"
       # means. It means false.
-      arguments = SchemaValidator.coerce(klass.mcp_schema, arguments)
+      arguments = SchemaValidator.coerce(schema, arguments)
 
       perform(arguments)
     end
@@ -134,6 +161,8 @@ module RedmineMcpPlugin
     def perform(_arguments)
       raise NotImplementedError
     end
+
+    def plugin?(id) = self.class.plugin?(id)
 
     # --- helpers available to every tool ----------------------------------
 
@@ -153,6 +182,14 @@ module RedmineMcpPlugin
     def authorize_note!(issue)
       authorize!(:add_issue_notes, issue.project)
       raise ToolError, 'You do not have permission to do that' unless issue.notes_addable?(user)
+    end
+
+    # Core allows edit_issues, or edit_own_issues on one's own issue, per
+    # tracker. attributes_editable? misses OAuth scopes; allowed_to? misses trackers.
+    def authorize_edit!(issue)
+      scoped = user.allowed_to?(:edit_issues, issue.project) ||
+               (issue.author_id == user.id && user.allowed_to?(:edit_own_issues, issue.project))
+      raise ToolError, 'You do not have permission to do that' unless scoped && issue.attributes_editable?(user)
     end
 
     # SchemaValidator has already refused a non-integer or below-minimum limit,
@@ -273,13 +310,61 @@ module RedmineMcpPlugin
       Rails.application.routes.url_helpers.public_send(helper, *args, **options, **Mailer.default_url_options)
     end
 
-    # --- writes -------------------------------------------------------------
+    # --- issue writes -------------------------------------------------------
 
-    # One table for the refusal names and for get_issue_fields' settable list.
-    WRITE_ATTRIBUTES = { 'subject' => 'subject', 'description' => 'description', 'status' => 'status_id',
-                         'priority' => 'priority_id', 'assigned_to' => 'assigned_to_id',
-                         'parent' => 'parent_issue_id', 'custom_field_values' => 'custom_field_values' }.freeze
-    PARAMETER_NAMES  = WRITE_ATTRIBUTES.invert.freeze
+    # parameter => [core attribute, kind]. The plain kinds (text, date, integer,
+    # number, boolean) need no resolver, so a new such field is one row here and
+    # one schema line. tracker and parent keep their raw value and are resolved
+    # after refuse_unsettable!, so the permission refusal comes first.
+    WRITE_ATTRIBUTES = {
+      'subject'             => %w[subject text],
+      'description'         => %w[description text],
+      'tracker'             => %w[tracker_id tracker],
+      'status'              => %w[status_id status],
+      'priority'            => %w[priority_id priority],
+      'category'            => %w[category_id category],
+      'fixed_version'       => %w[fixed_version_id fixed_version],
+      'assigned_to'         => %w[assigned_to_id assigned_to],
+      'parent'              => %w[parent_issue_id parent],
+      'start_date'          => %w[start_date date],
+      'due_date'            => %w[due_date date],
+      'done_ratio'          => %w[done_ratio integer],
+      'estimated_hours'     => %w[estimated_hours number],
+      'is_private'          => %w[is_private boolean],
+      'watcher_users'       => %w[watcher_user_ids watcher_users],
+      'custom_field_values' => %w[custom_field_values custom_field_values]
+    }.freeze
+    PARAMETER_NAMES = WRITE_ATTRIBUTES.to_h { |name, (attribute, _kind)| [attribute, name] }
+                                      .merge('checklists_attributes' => 'checklists').freeze
+    # "none" clears these; parent handles it on its own path.
+    CLEARABLE = %w[date category fixed_version assigned_to].freeze
+    TAG_KEYS  = %w[tag_list add_tag_list remove_tag_list].freeze
+
+    def issue_attributes_from(issue, arguments)
+      WRITE_ATTRIBUTES.each_with_object({}) do |(name, (attribute, kind)), attributes|
+        value = arguments[name]
+        next if value.nil?
+
+        clear  = value == 'none' && CLEARABLE.include?(kind)
+        result = clear ? '' : issue_value(issue, name, kind, value)
+        attributes[attribute] = result unless result.nil?
+      end
+    end
+
+    def issue_value(issue, name, kind, value)
+      case kind
+      when 'text'                then value.to_s
+      when 'date'                then iso_date(value, name)
+      when 'status'              then status_id(value)
+      when 'priority'            then priority_id(value)
+      when 'category'            then issue_category_id(issue, value)
+      when 'fixed_version'       then issue_version_id(issue, value)
+      when 'assigned_to'         then assignee_id(issue, value)
+      when 'watcher_users'       then watcher_ids(issue, value, name)
+      when 'custom_field_values' then custom_field_values_from(value)
+      else value
+      end
+    end
 
     # Core drops what the role, tracker or workflow forbids and saves the rest;
     # name it and stop instead.
@@ -289,6 +374,85 @@ module RedmineMcpPlugin
 
       names = unsafe.map { |key| PARAMETER_NAMES.fetch(key, key) }.join(', ')
       raise ToolError, "Cannot set #{names} on this #{record.class.model_name.human.downcase}"
+    end
+
+    # add_issues is granted per tracker, and core would silently substitute a
+    # permitted one -- which an agent reports as success. Refuse instead. Core
+    # applies the same rule when an existing issue changes tracker.
+    def tracker_for(issue, name)
+      allowed = issue.allowed_target_trackers(user)
+      project = issue.project
+      if name.blank?
+        trackers = allowed.to_a
+        raise ToolError, 'You do not have permission to do that' if trackers.empty?
+        return trackers.first if trackers.one?
+
+        raise ToolError, "Pass tracker. #{project.identifier} allows: #{trackers.map(&:name).join(', ')}"
+      end
+
+      tracker = project.trackers.find_by(name: name.to_s)
+      raise ToolError, "Project #{project.identifier} has no tracker named #{name.inspect}" if tracker.nil?
+      unless allowed.where(id: tracker.id).exists?
+        # One core rule, two acts: creating with a tracker, or moving an issue to one.
+        act = issue.new_record? ? 'create issues with' : 'move issues to'
+        raise ToolError, "You do not have permission to #{act} tracker #{name.inspect} in project #{project.identifier}"
+      end
+
+      tracker
+    end
+
+    def status_id(name)
+      status = IssueStatus.find_by(name: name.to_s)
+      raise ToolError, "No issue status named #{name.inspect}" if status.nil?
+
+      status.id
+    end
+
+    # Core keeps the old status silently when the workflow has no such transition.
+    def refuse_status!(issue, status_id, name)
+      return if status_id == issue.status_id
+
+      allowed = issue.new_statuses_allowed_to(user)
+      return if allowed.any? { |status| status.id == status_id }
+
+      names = allowed.map(&:name)
+      raise ToolError, "Status #{name.inspect} is not allowed here. Allowed: #{names.any? ? names.join(', ') : 'none'}"
+    end
+
+    def priority_id(name)
+      priority = IssuePriority.active.find_by(name: name.to_s)
+      raise ToolError, "No active priority named #{name.inspect}" if priority.nil?
+
+      priority.id
+    end
+
+    # Name or id against the project's own list; names are unique per project.
+    def issue_category_id(issue, value)
+      categories = issue.project.issue_categories.to_a
+      category   = categories.detect { |c| c.id.to_s == value.to_s || c.name == value.to_s }
+      return category.id if category
+
+      raise ToolError, "No category #{value.inspect} in #{issue.project.identifier}. " \
+                       "Categories: #{categories.map(&:name).join(', ')}"
+    end
+
+    # Core's own list for this issue; shared versions of other projects may repeat a name.
+    def issue_version_id(issue, value)
+      versions = issue.assignable_versions
+      found    = versions.select { |v| v.id.to_s == value.to_s || v.name == value.to_s }
+      return found.first.id if found.one?
+
+      choices = (found.any? ? found : versions).map { |v| "#{v.name} (#{v.project.identifier}) id #{v.id}" }.join(', ')
+      raise ToolError, "Version #{value.inspect} is ambiguous here; pass the id: #{choices}" if found.any?
+
+      raise ToolError, "No assignable version #{value.inspect} for #{issue.project.identifier}. Versions: #{choices}"
+    end
+
+    # Core computes % done from the status under this setting and hides the field.
+    def refuse_done_ratio!(attributes)
+      return unless attributes.key?('done_ratio') && !Issue.use_field_for_done_ratio?
+
+      raise ToolError, 'Cannot set done_ratio: this Redmine computes % done from the status'
     end
 
     # Core's own rule, which also admits the author and the current assignee.
@@ -333,10 +497,123 @@ module RedmineMcpPlugin
       raise ToolError, "Custom fields #{list} cannot be set on this #{record.class.model_name.human.downcase}"
     end
 
-    # The issue as saved, read back off the record, with the custom fields the
-    # caller sent so the reply shows what core stored for them.
-    def issue_state(issue, custom_field_ids = [])
+    # --- watchers -----------------------------------------------------------
+
+    # Core's own list: the project's principals who may watch, minus current
+    # watchers and anyone who cannot see the issue.
+    def watcher_ids(issue, values, name)
+      Array(values).map do |value|
+        id = user_id_from(value, name)
+        next id if issue.addable_watcher_users.any? { |principal| principal.id == id }
+
+        raise ToolError, "User #{id} cannot be added as a watcher of this issue"
+      end
+    end
+
+    # Oneself follows core's Watch link, which needs no permission; anyone else
+    # needs add_issue_watchers or delete_issue_watchers, as core's own actions do.
+    def watcher_changes(issue, arguments)
+      adds = Array(arguments['add_watcher_users']).map { |v| user_id_from(v, 'add_watcher_users') }.uniq
+      removes = Array(arguments['remove_watcher_users']).map { |v| user_id_from(v, 'remove_watcher_users') }.uniq
+      authorize!(:add_issue_watchers, issue.project)    if adds.any? { |id| id != user.id }
+      authorize!(:delete_issue_watchers, issue.project) if removes.any? { |id| id != user.id }
+
+      principals_to_add = adds.map do |id|
+        next user if id == user.id
+
+        issue.addable_watcher_users.detect { |p| p.id == id } ||
+          raise(ToolError, "User #{id} cannot be added as a watcher of ##{issue.id}")
+      end
+      principals_to_remove = removes.map do |id|
+        issue.watcher_users.detect { |p| p.id == id } || raise(ToolError, "User #{id} is not a watcher of ##{issue.id}")
+      end
+      [principals_to_add, principals_to_remove]
+    end
+
+    def apply_watcher_changes!(issue, adds, removes)
+      adds.each    { |principal| issue.add_watcher(principal) unless issue.watched_by?(principal) }
+      removes.each { |principal| issue.remove_watcher(principal) }
+    end
+
+    def principal_row(principal)
+      { id: principal.id, name: principal.name, type: principal.class.name }
+    end
+
+    # --- attachments --------------------------------------------------------
+
+    def attachment_row(attachment)
       {
+        id: attachment.id,
+        filename: attachment.filename,
+        filesize: attachment.filesize,
+        content_type: attachment.content_type,
+        author: attachment.author&.name,
+        description: attachment.description,
+        created_on: iso(attachment.created_on),
+        url: absolute_url(:download_named_attachment_url, attachment, attachment.filename)
+      }
+    end
+
+    # --- plugins: redmineup_tags and redmine_checklists -----------------------
+
+    # The plugin applies tags silently only with edit_tags, and drops tags that
+    # do not exist yet without create_tags; both are refused here by name.
+    def tag_attributes(issue, arguments)
+      sent = TAG_KEYS.select { |key| !arguments[key].nil? }
+      return {} if sent.empty?
+
+      authorize!(:edit_tags, issue.project)
+      lists = sent.to_h { |key| [key, Array(arguments[key]).map(&:to_s).reject(&:blank?)] }
+      added = (lists['tag_list'] || []) + (lists['add_tag_list'] || [])
+      unless added.empty? || user.allowed_to?(:create_tags, issue.project)
+        unknown = added - Issue.all_tags.map(&:name)
+        raise ToolError, "Tags not yet existing need the Create tags permission: #{unknown.join(', ')}" if unknown.any?
+      end
+      lists
+    end
+
+    # The plugin's listener writes the journal detail. Called on its own with the
+    # two keys it reads: the issue, and the list it checks for presence.
+    def journal_tags!(issue)
+      RedmineupTags::Hooks::ModelIssueHook.instance.controller_issues_edit_before_save(
+        issue: issue, params: { issue: { tag_list: issue.tag_list.to_a } }
+      )
+    end
+
+    # The plugin's listener journals the change and recalculates the done ratio;
+    # it reads the issue and the journal, nothing else.
+    def journal_checklists!(issue)
+      RedmineChecklists::Hooks::ControllerIssuesHook.instance.controller_issues_edit_after_save(
+        issue: issue, journal: issue.current_journal
+      )
+    end
+
+    def checklist_row(item)
+      { id: item.id, subject: item.subject, is_done: item.is_done, is_section: item.is_section, position: item.position }
+    end
+
+    # --- saved state --------------------------------------------------------
+
+    STATE_READERS = {
+      'description'     => ->(issue) { issue.description },
+      'category'        => ->(issue) { issue.category&.name },
+      'fixed_version'   => ->(issue) { issue.fixed_version&.name },
+      'start_date'      => ->(issue) { issue.start_date&.iso8601 },
+      'due_date'        => ->(issue) { issue.due_date&.iso8601 },
+      'done_ratio'      => ->(issue) { issue.done_ratio },
+      'estimated_hours' => ->(issue) { issue.estimated_hours&.to_f },
+      'is_private'      => ->(issue) { issue.is_private? },
+      'watcher_users'   => ->(issue) { issue.watcher_users.map(&:name) },
+      'tag_list'        => ->(issue) { issue.tag_list.to_a },
+      'checklists'      => ->(issue) { issue.checklists.map { |item| { id: item.id, subject: item.subject, is_done: item.is_done } } }
+    }.freeze
+    STATE_ALIASES = { 'add_watcher_users' => 'watcher_users', 'remove_watcher_users' => 'watcher_users',
+                      'add_tag_list' => 'tag_list', 'remove_tag_list' => 'tag_list' }.freeze
+
+    # The issue as saved, read back off the record: the base set, plus every
+    # field the caller sent, plus the custom fields they sent.
+    def issue_state(issue, arguments)
+      state = {
         id: issue.id,
         subject: issue.subject,
         project_identifier: issue.project&.identifier,
@@ -344,10 +621,13 @@ module RedmineMcpPlugin
         status: issue.status&.name,
         assigned_to: issue.assigned_to&.name,
         priority: issue.priority&.name,
-        parent: issue.parent_id,
-        custom_fields: saved_custom_fields(issue, custom_field_ids),
-        url: absolute_url(:issue_url, issue)
+        parent: issue.parent_id
       }
+      sent = arguments.keys.map { |key| STATE_ALIASES.fetch(key, key) }
+      STATE_READERS.each { |name, read| state[name.to_sym] = read.call(issue) if sent.include?(name) }
+      state[:custom_fields] = saved_custom_fields(issue, custom_field_ids(arguments))
+      state[:url] = absolute_url(:issue_url, issue)
+      state
     end
 
     # --- news ---------------------------------------------------------------
@@ -381,8 +661,7 @@ module RedmineMcpPlugin
     end
 
     # SchemaValidator does not walk into an object, so the shape is checked here.
-    def custom_field_values_from(arguments)
-      raw = arguments['custom_field_values']
+    def custom_field_values_from(raw)
       return nil if raw.blank?
       raise ToolError, 'custom_field_values must be an object keyed by numeric custom field id' unless raw.is_a?(Hash)
 

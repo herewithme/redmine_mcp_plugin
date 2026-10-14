@@ -7,10 +7,10 @@ module RedmineMcpPlugin
            title: 'Get settable issue fields',
            description: 'Report what the authenticated user may set on an issue: the attributes it may ' \
                         'set, its custom fields with their allowed values, which are required or read-only, the ' \
-                        'statuses the issue may move to, and the users it may be assigned to. Call ' \
-                        'this before create_issue or update_issue. Pass issue for an existing issue, ' \
-                        'or project (and optionally tracker) for one not yet created. When a required ' \
-                        'value is not clear from the conversation, ask the user for it; never invent one.',
+                        'statuses the issue may move to, the trackers, categories, versions, assignees and ' \
+                        'watchers it may use. Call this before create_issue or update_issue. Pass issue for ' \
+                        'an existing issue, or project (and optionally tracker) for one not yet created. When ' \
+                        'a required value is not clear from the conversation, ask the user for it; never invent one.',
            permission: :view_issues,
            schema: {
              'type' => 'object',
@@ -24,28 +24,43 @@ module RedmineMcpPlugin
              'additionalProperties' => false
            }
 
+      MAX_TAGS = 100
+
       private
 
       def perform(arguments)
-        issue = build_issue(arguments)
+        issue   = build_issue(arguments)
+        project = issue.project
 
-        {
+        payload = {
           issue_id: issue.id,
-          project_identifier: issue.project&.identifier,
+          project_identifier: project&.identifier,
           tracker: issue.tracker&.name,
           # Parameter names, from the same core rule the write tools refuse by.
-          settable_attributes: WRITE_ATTRIBUTES.select { |_name, attribute| issue.safe_attribute?(attribute, user) }.keys,
+          settable_attributes: WRITE_ATTRIBUTES.select { |_name, (attribute, _kind)| issue.safe_attribute?(attribute, user) }.keys,
           # Core mixes attribute names with custom field ids here; the ids are
           # reported on each custom field instead.
           required_attributes: core_attributes(issue.required_attribute_names(user)),
           read_only_attributes: core_attributes(issue.read_only_attribute_names(user)),
+          done_ratio_field: Issue.use_field_for_done_ratio?,
           custom_fields: custom_fields_for(issue),
           allowed_statuses: issue.new_statuses_allowed_to(user).map do |status|
             { id: status.id, name: status.name, is_closed: status.is_closed? }
           end,
           allowed_trackers: issue.allowed_target_trackers(user).map { |t| { id: t.id, name: t.name } },
+          categories: project.issue_categories.map { |c| { id: c.id, name: c.name } },
+          fixed_versions: issue.assignable_versions.map { |v| { id: v.id, name: v.name, project: v.project.identifier } },
           assignable_users: issue.assignable_users.map { |u| { id: u.id, login: u.login, name: u.name } }
         }
+        if user.allowed_to?(:add_issue_watchers, project)
+          payload[:addable_watcher_users] = issue.addable_watcher_users.map { |p| principal_row(p) }
+        end
+        if plugin?(:redmine_checklists)
+          payload[:checklists] = { edit: user.allowed_to?(:edit_checklists, project),
+                                   done: user.allowed_to?(:done_checklists, project) || user.allowed_to?(:edit_checklists, project) }
+        end
+        payload[:tags] = tags_for(project) if plugin?(:redmineup_tags)
+        payload
       end
 
       def build_issue(arguments)
@@ -117,6 +132,13 @@ module RedmineMcpPlugin
           label, value = option.is_a?(Array) ? option : [option, option]
           { value: value.to_s, label: label.to_s }
         end
+      end
+
+      # Tags are global; the plugin's own list, capped so a big instance stays readable.
+      def tags_for(project)
+        names = Issue.all_tags.map(&:name)
+        { edit: user.allowed_to?(:edit_tags, project), create: user.allowed_to?(:create_tags, project),
+          available: names.first(MAX_TAGS), truncated: names.size > MAX_TAGS }
       end
     end
   end

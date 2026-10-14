@@ -5,8 +5,11 @@ module RedmineMcpPlugin
     class GetIssue < Tool
       tool 'get_issue',
            title: 'Get issue',
-           description: 'Fetch one issue by id, with its description and optionally its notes and history.',
+           description: 'Fetch one issue with its description, attachments, watchers and plugin data ' \
+                        'where permitted, and optionally its notes and history.',
            permission: :view_issues,
+           scopes: %i[view_issue_watchers],
+           plugin_scopes: { redmine_checklists: %i[view_checklists] },
            schema: {
              'type' => 'object',
              'properties' => {
@@ -45,8 +48,16 @@ module RedmineMcpPlugin
           is_private: issue.is_private?,
           created_on: iso(issue.created_on),
           updated_on: iso(issue.updated_on),
-          custom_fields: visible_custom_fields(issue)
+          custom_fields: visible_custom_fields(issue),
+          attachments: issue.attachments.map { |attachment| attachment_row(attachment) }
         }
+
+        # Keys, not empty lists, so a missing permission never reads as "nobody".
+        payload[:watchers] = issue.watcher_users.map { |p| principal_row(p) } if user.allowed_to?(:view_issue_watchers, issue.project)
+        if plugin?(:redmine_checklists) && user.allowed_to?(:view_checklists, issue.project)
+          payload[:checklists] = issue.checklists.map { |item| checklist_row(item) }
+        end
+        payload[:tag_list] = issue.tag_list.to_a if plugin?(:redmineup_tags)
 
         include_journals = arguments.fetch('include_journals', true)
         payload[:journals] = journals_for(issue) if include_journals

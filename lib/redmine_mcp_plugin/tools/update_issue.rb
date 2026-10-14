@@ -5,13 +5,13 @@ module RedmineMcpPlugin
     class UpdateIssue < Tool
       tool 'update_issue',
            title: 'Update issue',
-           description: 'Change an existing issue: status, assignee, priority, subject, description, ' \
-                        'parent and custom fields, with an optional note recorded in the same journal entry. ' \
-                        'Call get_issue_fields first to learn what this user may set and which values ' \
-                        'are allowed. Changes the role or workflow does not permit are refused by ' \
-                        'name. End with the url.',
+           description: 'Change an issue: any field get_issue_fields lists, custom fields, watchers, tags, ' \
+                        'with an optional note in the same journal. Refused by name when the role or ' \
+                        'workflow forbids. "none" clears an optional date or reference. End with the url.',
            permission: %i[edit_issues edit_own_issues],
-           scopes: %i[manage_subtasks],
+           scopes: %i[manage_subtasks add_issue_watchers delete_issue_watchers set_issues_private set_own_issues_private],
+           plugin_scopes: { redmineup_tags: %i[edit_tags create_tags] },
+           plugin_properties: { redmineup_tags: %w[add_tag_list remove_tag_list] },
            rendered: %w[description notes],
            plain: %w[subject],
            write: true,
@@ -22,16 +22,24 @@ module RedmineMcpPlugin
                'issue' => { 'type' => 'integer', 'description' => 'Issue id.' },
                'subject' => { 'type' => 'string' },
                'description' => { 'type' => 'string' },
-               'status' => { 'type' => 'string',
-                             'description' => 'Status name, from allowed_statuses in get_issue_fields.' },
-               'assigned_to' => { 'type' => %w[integer string],
-                                  'description' => 'User id from list_users, or "me".' },
+               'tracker' => { 'type' => 'string', 'description' => 'Tracker name.' },
+               'status' => { 'type' => 'string', 'description' => 'Status name.' },
                'priority' => { 'type' => 'string', 'description' => 'Priority name.' },
-               'parent' => { 'type' => %w[integer string],
-                             'description' => 'Parent issue id, or "none" to remove the parent.' },
+               'category' => { 'type' => %w[string integer], 'description' => 'Name or id.' },
+               'fixed_version' => { 'type' => %w[string integer], 'description' => 'Target version, name or id.' },
+               'assigned_to' => { 'type' => %w[integer string], 'description' => 'User id, or "me".' },
+               'parent' => { 'type' => %w[integer string], 'description' => 'Parent issue id.' },
+               'start_date' => { 'type' => 'string', 'description' => 'YYYY-MM-DD' },
+               'due_date' => { 'type' => 'string', 'description' => 'YYYY-MM-DD' },
+               'done_ratio' => { 'type' => 'integer' },
+               'estimated_hours' => { 'type' => 'number' },
+               'is_private' => { 'type' => 'boolean' },
+               'add_watcher_users' => { 'type' => 'array', 'description' => 'User or group ids, or "me".' },
+               'remove_watcher_users' => { 'type' => 'array', 'description' => 'User or group ids, or "me".' },
+               'add_tag_list' => { 'type' => 'array', 'description' => 'Tag names.' },
+               'remove_tag_list' => { 'type' => 'array', 'description' => 'Tag names.' },
                'custom_field_values' => { 'type' => 'object',
-                                    'description' => 'Custom field values keyed by numeric field id, e.g. {"7": "3"}. ' \
-                                                     'Send the value from get_issue_fields possible_values, never the label.' },
+                                          'description' => 'By numeric field id, e.g. {"7": "3"}; the value, never the label.' },
                'notes' => { 'type' => 'string', 'description' => 'Note recorded with this change.' }
              },
              'required' => %w[issue],
@@ -42,74 +50,41 @@ module RedmineMcpPlugin
 
       def perform(arguments)
         issue      = fetch_issue(arguments['issue'])
-        attributes = attributes_from(arguments, issue)
+        attributes = issue_attributes_from(issue, arguments)
+        tags       = plugin?(:redmineup_tags) ? tag_attributes(issue, arguments) : {}
         notes      = arguments['notes'].to_s
-        raise ToolError, 'Pass at least one field to change, or a note' if attributes.empty? && notes.strip.empty?
+        watching   = %w[add_watcher_users remove_watcher_users].any? { |key| arguments[key].present? }
+        if attributes.empty? && tags.empty? && notes.strip.empty? && !watching
+          raise ToolError, 'Pass at least one field to change, or a note'
+        end
 
         authorize_edit!(issue) if attributes.any?
         authorize_note!(issue) unless notes.strip.empty?
         refuse_unsettable!(issue, attributes)
+        if attributes.key?('tracker_id')
+          # Assigned now, so the status and custom field checks see the new tracker.
+          issue.tracker = tracker_for(issue, arguments['tracker'])
+          attributes['tracker_id'] = issue.tracker_id
+        end
         refuse_status!(issue, attributes['status_id'], arguments['status']) if attributes.key?('status_id')
+        refuse_done_ratio!(attributes)
         refuse_unknown_custom_fields!(issue, custom_field_ids(arguments))
         attributes['parent_issue_id'] = parent_attribute(issue, arguments['parent']) if attributes.key?('parent_issue_id')
+        adds, removes = watcher_changes(issue, arguments)
 
         # notes delegates to the journal and is swallowed when there is none,
         # so the journal has to exist first.
         issue.init_journal(user, notes)
-        issue.safe_attributes = attributes
-        raise ToolError, "Could not update issue: #{issue.errors.full_messages.join('; ')}" unless issue.save
+        # Indifferent access: the tags plugin reads its keys as symbols.
+        issue.safe_attributes = attributes.merge(tags).with_indifferent_access
+        journal_tags!(issue) if tags.any?
+        Issue.transaction do
+          raise ToolError, "Could not update issue: #{issue.errors.full_messages.join('; ')}" unless issue.save
 
-        issue_state(issue, custom_field_ids(arguments)).merge(journal_id: issue.current_journal&.id)
-      end
-
-      # Core allows edit_issues, or edit_own_issues on one's own issue, per
-      # tracker. attributes_editable? misses OAuth scopes; allowed_to? misses trackers.
-      def authorize_edit!(issue)
-        scoped = user.allowed_to?(:edit_issues, issue.project) ||
-                 (issue.author_id == user.id && user.allowed_to?(:edit_own_issues, issue.project))
-        raise ToolError, 'You do not have permission to do that' unless scoped && issue.attributes_editable?(user)
-      end
-
-      # Core keeps the old status silently when the workflow has no such transition.
-      def refuse_status!(issue, status_id, name)
-        return if status_id == issue.status_id
-
-        allowed = issue.new_statuses_allowed_to(user)
-        return if allowed.any? { |status| status.id == status_id }
-
-        names = allowed.map(&:name)
-        raise ToolError, "Status #{name.inspect} is not allowed here. Allowed: #{names.any? ? names.join(', ') : 'none'}"
-      end
-
-      def attributes_from(arguments, issue)
-        attributes = {}
-        # nil means not sent, never "clear it".
-        attributes['subject']     = arguments['subject'].to_s     unless arguments['subject'].nil?
-        attributes['description'] = arguments['description'].to_s unless arguments['description'].nil?
-
-        if (name = arguments['status'].presence)
-          status = IssueStatus.find_by(name: name.to_s)
-          raise ToolError, "No issue status named #{name.inspect}" if status.nil?
-
-          attributes['status_id'] = status.id
+          apply_watcher_changes!(issue, adds, removes)
         end
 
-        if (name = arguments['priority'].presence)
-          priority = IssuePriority.active.find_by(name: name.to_s)
-          raise ToolError, "No active priority named #{name.inspect}" if priority.nil?
-
-          attributes['priority_id'] = priority.id
-        end
-
-        attributes['assigned_to_id'] = assignee_id(issue, arguments['assigned_to']) if arguments['assigned_to'].present?
-        # The key alone, so the permission refusal comes before the parent's own checks.
-        attributes['parent_issue_id'] = arguments['parent'] unless arguments['parent'].nil?
-
-        if (values = custom_field_values_from(arguments))
-          attributes['custom_field_values'] = values
-        end
-
-        attributes
+        issue_state(issue, arguments).merge(journal_id: issue.current_journal&.id)
       end
     end
   end

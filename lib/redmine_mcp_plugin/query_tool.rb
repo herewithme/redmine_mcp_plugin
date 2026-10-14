@@ -25,7 +25,7 @@ module RedmineMcpPlugin
         raise ToolError, "Unknown filter #{field.inspect}. Call with describe: true for the ones this Redmine accepts"
       end
 
-      legal = Query.operators_by_filter_type[available[:type]] || []
+      legal = operators_for(available[:type])
       unless legal.include?(operator)
         raise ToolError, "Operator #{operator.inspect} is not valid for #{field.inspect}. Valid: #{legal.join(', ')}"
       end
@@ -172,9 +172,15 @@ module RedmineMcpPlugin
       }
     end
 
+    # redmineup_tags registers its filter type with no operators; its statement
+    # takes the list_optional set, so an unregistered type gets that set.
+    def operators_for(type)
+      Query.operators_by_filter_type[type] || Query.operators_by_filter_type[:list_optional] || []
+    end
+
     def describe_filter(field, filter)
       entry = { field: field, name: filter[:name], type: filter[:type].to_s,
-                operators: Query.operators_by_filter_type[filter[:type]] || [] }
+                operators: operators_for(filter[:type]) }
 
       # Returning early also skips evaluating the values lambda, a query each.
       return entry.merge(values: nil, note: 'Ids come from list_users, or "me".') if user_valued?(field, filter)

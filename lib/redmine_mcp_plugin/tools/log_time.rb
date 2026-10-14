@@ -53,7 +53,7 @@ module RedmineMcpPlugin
         attributes = { 'hours' => arguments['hours'], 'activity_id' => activity_for(project, arguments['activity']).id }
         attributes['comments'] = arguments['comments'].to_s if arguments.key?('comments')
 
-        if (values = custom_field_values_from(arguments))
+        if (values = custom_field_values_from(arguments['custom_field_values']))
           attributes['custom_field_values'] = values
         end
 

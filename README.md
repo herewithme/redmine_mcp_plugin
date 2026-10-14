@@ -66,8 +66,11 @@ sections.
 |---|---|---|
 | `view_project` | View projects | Project |
 | `view_issues` | View Issues | Issue tracking |
+| `view_issue_watchers` | View watchers list | Issue tracking |
 | `view_wiki_pages` | View wiki | Wiki |
 | `view_time_entries` | View spent time | Time tracking |
+| `view_news` | View news | News |
+| `view_checklists` | View checklist | Issue tracking, with redmine_checklists installed |
 | `add_issues` | Add issues | Issue tracking |
 | `edit_issues` | Edit issues | Issue tracking |
 | `edit_own_issues` | Edit own issues | Issue tracking |
@@ -76,14 +79,26 @@ sections.
 | `set_notes_private` | Set notes as private | Issue tracking |
 | `edit_own_issue_notes` | Edit own notes | Issue tracking |
 | `manage_subtasks` | Manage subtasks | Issue tracking |
-| `view_news` | View news | News |
+| `add_issue_watchers` | Add watchers | Issue tracking |
+| `delete_issue_watchers` | Delete watchers | Issue tracking |
+| `set_issues_private` | Set issues public or private | Issue tracking |
+| `set_own_issues_private` | Set own issues public or private | Issue tracking |
 | `manage_news` | Manage news | News |
+| `done_checklists` | Done checklist items | Issue tracking, with redmine_checklists installed |
+| `edit_checklists` | Edit checklist items | Issue tracking, with redmine_checklists installed |
+| `create_tags` | Create tags | Issue tracking, with redmineup_tags installed |
+| `edit_tags` | Edit tags | Issue tracking, with redmineup_tags installed |
 
-The first five are advertised in read-only mode, which is the default, and are all an application
-needs while the server stays read-only. The last ten are advertised only once read-only mode is
-switched off. `set_notes_private` and `manage_subtasks` gate no tool: `add_issue_note` checks the first
-for `private_notes: true`, `create_issue` and `update_issue` the second for `parent`, and a permission a tool
-checks at runtime must be advertised, or no token can ever carry it.
+The `view_` rows are advertised in read-only mode, which is the default, and are all an application
+needs while the server stays read-only. The others are advertised only once read-only mode is
+switched off. The checklist and tag rows exist only while that plugin is installed; the server reads
+this per request, so installing or removing one of those plugins changes the advertised set the way
+adding a tool does. Several scopes gate no tool but one parameter, or one part of a reply:
+`set_notes_private` for `private_notes: true`, `manage_subtasks` for `parent`, `add_issue_watchers`
+and `delete_issue_watchers` for watchers, `set_issues_private` and `set_own_issues_private` for
+`is_private`, `view_issue_watchers` and `view_checklists` for what `get_issue` includes, `edit_tags`
+and `create_tags` for tags. A permission a tool checks at runtime must be advertised, or no token can
+ever carry it.
 
 Adding a tool with a new permission changes the advertised set, and every user reconnects to get a
 token that carries it. The application only needs editing if it did not already enable the scope.
@@ -100,11 +115,15 @@ plus `admin`, ~200 in all. Claude requests exactly what `scopes_supported` lists
 failed with `invalid_scope` or granted far more than the tools use.
 
 Ours advertises the permissions the registered tools declare (`mcp_permissions`) and the ones they
-check at runtime (`scopes`), dropping the write tools while the server is read-only, intersected
-with what Doorkeeper will accept. Read-only gives `view_project`, `view_issues`, `view_wiki_pages`,
+check at runtime (`scopes`), dropping the write tools while the server is read-only and the tools
+and scopes of plugins that are not installed, intersected with what Doorkeeper will accept.
+Read-only gives `view_project`, `view_issues`, `view_issue_watchers`, `view_wiki_pages`,
 `view_time_entries` and `view_news`; with writes on, add `add_issues`, `add_issue_notes`,
 `edit_issues`, `edit_own_issues`, `edit_own_issue_notes`, `log_time`, `set_notes_private`,
-`manage_subtasks` and `manage_news`. The OAuth application in
+`manage_subtasks`, `add_issue_watchers`, `delete_issue_watchers`, `set_issues_private`,
+`set_own_issues_private` and `manage_news`. With redmine_checklists installed, `view_checklists`
+joins the read-only set and `done_checklists` and `edit_checklists` the write set; with
+redmineup_tags, `create_tags` and `edit_tags` join the write set. The OAuth application in
 Redmine must enable at least these; it may enable more. The same file probes Doorkeeper for PKCE support rather than
 assuming it, and advertises `S256` only — never `plain`, which MCP clients may not select.
 
@@ -238,7 +257,8 @@ while read-only mode is on, which is the default.
 |---|---|
 | `whoami` | none. Reports identity, auth mode and granted scopes |
 | `list_projects`, `get_project` | `view_project` |
-| `search_issues`, `get_issue` | `view_issues` |
+| `search_issues`, `get_issue` | `view_issues`. `get_issue` adds the attachments, the watchers under `view_issue_watchers`, the checklist under `view_checklists`, and the tags |
+| `get_attachment` | `view_issues`, through core's `Attachment#visible?`. Metadata, and the content of a text file within `file_max_size_displayed` |
 | `list_queries` | `view_issues`. Saved queries, filtered by `IssueQuery.visible` |
 | `list_wiki_pages`, `get_wiki_page` | `view_wiki_pages` |
 | `list_news`, `get_news` | `view_news`. Filtered by `News.visible`; with a project, that project's own news, as core's index |
@@ -246,10 +266,12 @@ while read-only mode is on, which is the default.
 | `list_users` | none. Filtered by `Principal.visible` |
 | `list_time_entries` | `view_time_entries`. Totals, per-group hours and each entry's custom fields, filtered by `TimeEntry.visible` |
 | `get_issue_fields` | `view_issues`. What the caller may set on an issue, before a write |
-| `create_issue` (write) | `add_issues`, on the requested tracker, plus `manage_subtasks` for `parent` |
-| `update_issue` (write) | `edit_issues`, or `edit_own_issues` on one's own issue, on the issue's tracker, plus `manage_subtasks` for `parent` |
+| `create_issue` (write) | `add_issues`, on the requested tracker, plus `manage_subtasks` for `parent`, `add_issue_watchers` for `watcher_users`, `set_issues_private` or `set_own_issues_private` for `is_private`, `edit_checklists` for `checklists`, `edit_tags` for `tag_list` and `create_tags` for a tag that does not exist yet |
+| `update_issue` (write) | `edit_issues`, or `edit_own_issues` on one's own issue, on the issue's tracker, plus the per-field permissions of `create_issue` and `delete_issue_watchers` for `remove_watcher_users`. Watching or unwatching oneself needs none, as core's Watch link |
 | `add_issue_note` (write) | `add_issue_notes`, on the issue's tracker, plus `set_notes_private` for private notes |
 | `update_issue_note` (write) | `edit_own_issue_notes`; only notes the caller wrote, plus `set_notes_private` to change privacy |
+| `add_issue_attachment` (write) | `edit_issues`, `edit_own_issues` or `add_issue_notes`, as core's `attachments_addable?`. A text file within `attachment_max_size` and the extension lists; saved with a journal, so watchers are mailed as for an issue update |
+| `update_issue_checklists` (write) | `edit_checklists` to add or rename, `done_checklists` or `edit_checklists` to tick or untick. Present only with redmine_checklists |
 | `log_time` (write) | `log_time`. Always for the authenticated user |
 | `create_news` (write) | `manage_news`. Publishes at once and, when `news_added` is a notified event, emails project members and news watchers; the tool tells the agent to get explicit confirmation first |
 | `update_news` (write) | `manage_news`. Editing sends no email |
@@ -259,14 +281,16 @@ while read-only mode is on, which is the default.
 `users_visibility` setting.
 
 Parameter names follow one rule: content fields keep Redmine's attribute names (`subject`,
-`description`, `notes`, `custom_field_values`); a reference to a record is Redmine's name without
-`_id` (`issue`, `project`, `news`, `journal`, `parent`, `assigned_to`, `query`, `fixed_version`); only
-`filters` keeps Redmine's query field names verbatim; a null value means not sent, never "clear it".
+`description`, `notes`, `custom_field_values`, `tag_list`); a reference to a record is Redmine's name
+without `_id` or `_ids` (`issue`, `project`, `news`, `journal`, `parent`, `assigned_to`, `query`,
+`category`, `fixed_version`, `watcher_users`, `attachment`, `checklist`); only `filters` keeps
+Redmine's query field names verbatim; a null value means not sent, never "clear it".
 
 Parameters use one shape per concept across tools: an issue is `issue`, a numeric id; a project is
 `project`, an identifier or numeric id; a news item is `news`; a person — `assigned_to`, `author`, `user` — is a user id from
-`list_users`, or `"me"`; `parent` is an issue id, and on `update_issue` the string `"none"` removes
-the parent. Filters that name a project, an issue, a version or a category through
+`list_users`, or `"me"`; `parent` is an issue id; `category` and `fixed_version` are a name or an id
+from `get_issue_fields`; the string `"none"` clears an optional date or reference (`parent`, `category`,
+`fixed_version`, `assigned_to`, `start_date`, `due_date`). Filters that name a project, an issue, a version or a category through
 `filters` are authorised like the named parameters, so an invisible one is refused rather than
 answered with zero.
 
@@ -277,6 +301,37 @@ tracker or workflow does not let this user set; `log_time` does the same for cus
 the things core would drop silently and save the rest. A `parent` that is invisible, circular, or
 outside the cross-project subtasks setting is refused by cause, where core would say only "Parent task
 is invalid".
+
+`create_issue` and `update_issue` take every field of core's issue form: the standard attributes,
+custom fields, watchers, and with the plugins below checklists and tags. Each parameter maps to one
+core attribute through one table in `lib/redmine_mcp_plugin/tool.rb`, and `get_issue_fields` reports
+that table filtered by core's `safe_attribute?`, so what it lists is what a write accepts. The core
+safe attributes left out, each for a reason: `project_id` (moving an issue is another act),
+`notes` and `private_notes` (the note tools), `custom_fields` (the array form of
+`custom_field_values`), `lock_version` (a form concern), `deleted_attachment_ids` (nothing here
+deletes). On `update_issue` a new `tracker` is applied before anything else, as core's form does, so
+the status and the custom fields are checked against the new tracker. `done_ratio` is refused when
+Redmine computes it from the status. Watchers are added and removed explicitly; nothing replaces the
+list.
+
+Attachments: `get_issue` lists them, `get_attachment` reads a text file within
+`file_max_size_displayed` and reports a binary or larger file as omitted, and `add_issue_attachment`
+adds a text file through core's token path, so `attachment_max_size` and the extension lists apply.
+It saves the attachment with a journal, and Redmine mails the watchers when `issue_updated` or
+`issue_attachment_added` is a notified event. Binary attachments, and deleting anything, are out of
+scope.
+
+Plugins: checklists (redmine_checklists) and tags (redmineup_tags) exist for the agent only while the
+plugin is installed. `Redmine::Plugin.installed?` is read per request, not at boot, because plugins
+load alphabetically and this one boots before redmineup_tags. Without the plugin the
+`update_issue_checklists` tool, the `checklists`, `tag_list`, `add_tag_list` and `remove_tag_list`
+parameters and the five plugin scopes are absent from the served list and the advertised scopes.
+Both plugins journal through controller hooks. The tools call the two listeners directly with the
+keys each reads: the tags listener gets the issue and its real tag list, which it checks for
+presence; the checklists listener gets the issue and its journal. `Redmine::Hook.call_hook` is not
+used, since it would wake every listener on those hooks with a params object that is not a
+request's. The tags filter `issue_tags` registers no operators, so `search_issues` offers it the
+`list_optional` set, which is what the plugin's statement handles.
 
 ### Text formatting
 
