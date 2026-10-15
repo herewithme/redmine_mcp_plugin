@@ -296,8 +296,13 @@ answered with zero.
 
 Writes refuse rather than guess, and save nothing when they refuse: `create_issue` needs `tracker`
 when the project allows more than one, and `log_time` needs `activity`. `create_issue` and
-`update_issue` refuse by name any field or custom field, and `update_issue` any status, that the role,
-tracker or workflow does not let this user set; `log_time` does the same for custom fields. These are
+`update_issue` run every per-field check before refusing, then refuse once, naming each blocked
+parameter with its cause: a field, custom field, status, watcher, checklist or tag that the role,
+tracker, workflow, a setting or a plugin permission does not let this user set, and for a missing
+permission the label to ask for, in the caller's language, as in "is_private (needs Set issues public
+or private)". The refusal
+stays the uniform "You do not have permission to do that" when the caller may not use the tool or
+edit the issue at all. `log_time` refuses custom fields by name as before. These are
 the things core would drop silently and save the rest. A `parent` that is invisible, circular, or
 outside the cross-project subtasks setting is refused by cause, where core would say only "Parent task
 is invalid".
@@ -310,9 +315,11 @@ safe attributes left out, each for a reason: `project_id` (moving an issue is an
 `notes` and `private_notes` (the note tools), `custom_fields` (the array form of
 `custom_field_values`), `lock_version` (a form concern), `deleted_attachment_ids` (nothing here
 deletes). On `update_issue` a new `tracker` is applied before anything else, as core's form does, so
-the status and the custom fields are checked against the new tracker. `done_ratio` is refused when
-Redmine computes it from the status. Watchers are added and removed explicitly; nothing replaces the
-list.
+the status and the custom fields are checked against the new tracker; the journal is opened before
+that, as core's update does, so the tracker change is journaled. `done_ratio` is refused when Redmine
+computes it from the status. Watchers are added and removed explicitly; nothing replaces the list.
+Every write reply is read back from the database after the save and the plugins' hooks, so it never
+claims a value that is not stored.
 
 Attachments: `get_issue` lists them, `get_attachment` reads a text file within
 `file_max_size_displayed` and reports a binary or larger file as omitted, and `add_issue_attachment`
@@ -326,6 +333,13 @@ plugin is installed. `Redmine::Plugin.installed?` is read per request, not at bo
 load alphabetically and this one boots before redmineup_tags. Without the plugin the
 `update_issue_checklists` tool, the `checklists`, `tag_list`, `add_tag_list` and `remove_tag_list`
 parameters and the five plugin scopes are absent from the served list and the advertised scopes.
+With its own `issue_done_ratio` setting on, redmine_checklists recomputes `done_ratio` from the items
+with a journal-less update on every edit and tick, once the issue has items; `done_ratio` is refused
+then, on create too when `checklists` come with it, and `get_issue_fields` reports it as
+`done_ratio_computed_from`. Closing an issue with open items under `block_issue_closing` fails the
+plugin's own validation, which the tool reports. `update_issue_checklists` sends each item's subject
+with a tick, since the plugin's nested attributes drop an item hash without one, and reads the items
+back inside its transaction: a change that did not take rolls everything back and is named.
 Both plugins journal through controller hooks. The tools call the two listeners directly with the
 keys each reads: the tags listener gets the issue and its real tag list, which it checks for
 presence; the checklists listener gets the issue and its journal. `Redmine::Hook.call_hook` is not

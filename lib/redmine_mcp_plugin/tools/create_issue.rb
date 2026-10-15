@@ -50,31 +50,33 @@ module RedmineMcpPlugin
         authorize!(:add_issues, project)
 
         issue = Issue.new(project: project, author: user)
-        # The tracker decides the custom fields and the default status, so it goes first.
+        # The tracker decides the fields, the statuses and the custom fields, so it is settled first.
         issue.tracker = tracker_for(issue, arguments['tracker'])
 
-        attributes = issue_attributes_from(issue, arguments.except('tracker'))
+        # Every per-field check runs; one refusal then names each blocked parameter.
+        problems   = []
+        attributes = issue_attributes_from(issue, arguments.except('tracker'), problems)
         if plugin?(:redmine_checklists) && !arguments['checklists'].nil?
-          attributes['checklists_attributes'] = checklist_attributes(project, arguments['checklists'])
+          items = checklist_attributes(issue, arguments['checklists'], problems)
+          attributes['checklists_attributes'] = items if items
         end
-        tags = plugin?(:redmineup_tags) ? tag_attributes(issue, arguments) : {}
-
-        refuse_unknown_custom_fields!(issue, custom_field_ids(arguments))
-        refuse_unsettable!(issue, attributes)
-        refuse_status!(issue, attributes['status_id'], arguments['status']) if attributes.key?('status_id')
-        refuse_done_ratio!(attributes)
-        attributes['parent_issue_id'] = parent_attribute(issue, arguments['parent']) if attributes.key?('parent_issue_id')
+        tags = plugin?(:redmineup_tags) ? tag_attributes(issue, arguments, problems) : {}
+        refuse_blocked!(issue, problems)
 
         # Indifferent access: the tags plugin reads its keys as symbols.
         issue.safe_attributes = attributes.merge(tags).with_indifferent_access
         raise ToolError, "Could not create issue: #{issue.errors.full_messages.join('; ')}" unless issue.save
 
-        issue_state(issue, arguments)
+        issue_state(stored(issue), arguments)
       end
 
       # Items are created with the issue through the plugin's own nested attributes.
-      def checklist_attributes(project, subjects)
-        authorize!(:edit_checklists, project)
+      def checklist_attributes(issue, subjects, problems)
+        unless user.allowed_to?(:edit_checklists, issue.project)
+          problems << "checklists (needs #{permission_labels(:edit_checklists)})"
+          return nil
+        end
+
         Array(subjects).map(&:to_s).reject(&:blank?).map { |subject| { 'subject' => subject } }
       end
     end

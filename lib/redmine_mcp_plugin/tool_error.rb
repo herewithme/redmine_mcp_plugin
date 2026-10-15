@@ -6,4 +6,8 @@ module RedmineMcpPlugin
   # tool execution error (isError: true) rather than a JSON-RPC protocol error,
   # because the specification reserves protocol errors for malformed requests.
   class ToolError < StandardError; end
+
+  # An argument of the wrong shape, the schema's kind of error. A tool that
+  # collects per-field refusals lets these through at once.
+  class InvalidArgument < ToolError; end
 end

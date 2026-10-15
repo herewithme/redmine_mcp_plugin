@@ -29,8 +29,9 @@ module RedmineMcpPlugin
       private
 
       def perform(arguments)
-        issue   = build_issue(arguments)
-        project = issue.project
+        issue    = build_issue(arguments)
+        project  = issue.project
+        computed = done_ratio_computed_from(issue)
 
         payload = {
           issue_id: issue.id,
@@ -42,7 +43,8 @@ module RedmineMcpPlugin
           # reported on each custom field instead.
           required_attributes: core_attributes(issue.required_attribute_names(user)),
           read_only_attributes: core_attributes(issue.read_only_attribute_names(user)),
-          done_ratio_field: Issue.use_field_for_done_ratio?,
+          done_ratio_field: computed.nil?,
+          done_ratio_computed_from: computed,
           custom_fields: custom_fields_for(issue),
           allowed_statuses: issue.new_statuses_allowed_to(user).map do |status|
             { id: status.id, name: status.name, is_closed: status.is_closed? }
@@ -52,6 +54,10 @@ module RedmineMcpPlugin
           fixed_versions: issue.assignable_versions.map { |v| { id: v.id, name: v.name, project: v.project.identifier } },
           assignable_users: issue.assignable_users.map { |u| { id: u.id, login: u.login, name: u.name } }
         }
+        # A new issue has no items yet; the plugin takes over as soon as it has.
+        if computed.nil? && issue.new_record? && checklist_done_ratio?(issue, adding: true)
+          payload[:done_ratio_note] = 'redmine_checklists computes it once the issue has checklist items'
+        end
         if user.allowed_to?(:add_issue_watchers, project)
           payload[:addable_watcher_users] = issue.addable_watcher_users.map { |p| principal_row(p) }
         end

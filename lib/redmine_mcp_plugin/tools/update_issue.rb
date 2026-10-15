@@ -49,32 +49,30 @@ module RedmineMcpPlugin
       private
 
       def perform(arguments)
-        issue      = fetch_issue(arguments['issue'])
-        attributes = issue_attributes_from(issue, arguments)
-        tags       = plugin?(:redmineup_tags) ? tag_attributes(issue, arguments) : {}
-        notes      = arguments['notes'].to_s
-        watching   = %w[add_watcher_users remove_watcher_users].any? { |key| arguments[key].present? }
-        if attributes.empty? && tags.empty? && notes.strip.empty? && !watching
-          raise ToolError, 'Pass at least one field to change, or a note'
-        end
+        issue  = fetch_issue(arguments['issue'])
+        sent   = sent_fields(arguments)
+        notes  = arguments['notes'].to_s
+        others = (TAG_KEYS + WATCHER_KEYS).any? { |key| arguments[key].present? }
+        raise ToolError, 'Pass at least one field to change, or a note' if sent.empty? && notes.strip.empty? && !others
 
-        authorize_edit!(issue) if attributes.any?
+        # Tool-level and uniform: editing this issue at all, noting on it at all.
+        authorize_edit!(issue) if sent.any?
         authorize_note!(issue) unless notes.strip.empty?
-        refuse_unsettable!(issue, attributes)
-        if attributes.key?('tracker_id')
-          # Assigned now, so the status and custom field checks see the new tracker.
-          issue.tracker = tracker_for(issue, arguments['tracker'])
-          attributes['tracker_id'] = issue.tracker_id
-        end
-        refuse_status!(issue, attributes['status_id'], arguments['status']) if attributes.key?('status_id')
-        refuse_done_ratio!(attributes)
-        refuse_unknown_custom_fields!(issue, custom_field_ids(arguments))
-        attributes['parent_issue_id'] = parent_attribute(issue, arguments['parent']) if attributes.key?('parent_issue_id')
-        adds, removes = watcher_changes(issue, arguments)
 
-        # notes delegates to the journal and is swallowed when there is none,
-        # so the journal has to exist first.
+        # The journal snapshots the record now, before anything is assigned, as
+        # core's update does; a tracker change is journaled only that way. notes
+        # delegates to the journal and is swallowed when there is none.
         issue.init_journal(user, notes)
+
+        # Every per-field check runs; one refusal then names each blocked parameter.
+        problems = []
+        change_tracker!(issue, arguments['tracker'], problems) if sent.include?('tracker')
+        attributes = issue_attributes_from(issue, arguments.except('tracker'), problems)
+        attributes['tracker_id'] = issue.tracker_id if sent.include?('tracker')
+        tags          = plugin?(:redmineup_tags) ? tag_attributes(issue, arguments, problems) : {}
+        adds, removes = watcher_changes(issue, arguments, problems)
+        refuse_blocked!(issue, problems)
+
         # Indifferent access: the tags plugin reads its keys as symbols.
         issue.safe_attributes = attributes.merge(tags).with_indifferent_access
         journal_tags!(issue) if tags.any?
@@ -84,7 +82,7 @@ module RedmineMcpPlugin
           apply_watcher_changes!(issue, adds, removes)
         end
 
-        issue_state(issue, arguments).merge(journal_id: issue.current_journal&.id)
+        issue_state(stored(issue), arguments).merge(journal_id: issue.current_journal&.id)
       end
     end
   end
