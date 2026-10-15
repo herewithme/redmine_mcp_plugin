@@ -32,14 +32,14 @@ module RedmineMcpPlugin
                         'and are combined with AND. Returns newest-updated first. total_count answers ' \
                         '"how many": limit 1 is enough to count, do not page to count. Call with ' \
                         'describe: true to list the filters, operators, sortable fields and values ' \
-                        'this Redmine accepts, including custom fields. With group_by, groups covers ' \
-                        'the whole filtered set, not just the returned page.',
+                        'this Redmine accepts, including custom fields, or describe: "<field>" for one ' \
+                        'filter. With group_by, groups covers the whole filtered set, not just the returned page.',
            permission: :view_issues,
            schema: {
              'type' => 'object',
              'properties' => {
-               'describe' => { 'type' => 'boolean',
-                               'description' => 'Return the available filters and sortable fields instead of issues.' },
+               'describe' => { 'type' => %w[boolean string],
+                               'description' => 'true: the available filters and sortable fields instead of issues; a field name: that filter only.' },
                'project' => { 'type' => %w[string integer],
                              'description' => 'Restrict to one project (identifier or numeric id).' },
                'search' => { 'type' => 'string', 'description' => 'Text searched across subject, description and notes.' },
@@ -73,6 +73,13 @@ module RedmineMcpPlugin
              'additionalProperties' => false
            }
 
+      class << self
+        # The plugin's filter is not named after the parameter an agent tries first.
+        def mcp_description
+          plugin?(:redmineup_tags) ? "#{super} Tags filter as issue_tags." : super
+        end
+      end
+
       private
 
       def perform(arguments)
@@ -86,7 +93,7 @@ module RedmineMcpPlugin
 
         saved = arguments['query'].present?
         query = build_query(arguments, project)
-        return describe(query) if arguments['describe']
+        return describe(query, arguments['describe']) if arguments['describe']
 
         apply_filters!(query, arguments, project)
         apply_sort!(query, arguments['sort'], default: [%w[updated_on desc]], saved: saved)

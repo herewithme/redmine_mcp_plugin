@@ -164,12 +164,22 @@ module RedmineMcpPlugin
 
     # --- describe -----------------------------------------------------------
 
-    def describe(query)
+    def describe(query, which = true)
+      return describe_one(query, which) if which.is_a?(String) && which != 'true'
+
       {
         filters: query.available_filters.map { |field, filter| describe_filter(field, filter) },
         sortable: sortable_fields(query),
         groupable: groupable_fields(query)
       }
+    end
+
+    # One filter by name, the same refusal as a filter that is set.
+    def describe_one(query, field)
+      filter = query.available_filters[field]
+      raise ToolError, "Unknown filter #{field.inspect}. Call with describe: true for the ones this Redmine accepts" if filter.nil?
+
+      describe_filter(field, filter)
     end
 
     # redmineup_tags registers its filter type with no operators; its statement
