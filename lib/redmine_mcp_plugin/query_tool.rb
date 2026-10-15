@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'did_you_mean'
+
 module RedmineMcpPlugin
   # Filtering, sorting, grouping and describing against a core Query subclass.
   # A module, not more helpers on Tool: only some tools are query-backed.
@@ -13,6 +15,7 @@ module RedmineMcpPlugin
     USER_FILTERS    = %w[assigned_to_id author_id watcher_id updated_by last_updated_by user_id].freeze
     PROJECT_FILTERS = %w[project_id subproject_id].freeze
     MAX_VALUES      = 50
+    MAX_SUGGESTIONS = 5
     VERSION_FIELD   = { '=' => :version }.freeze
 
     private
@@ -21,9 +24,7 @@ module RedmineMcpPlugin
     # result, which reads to the caller exactly like an answer.
     def set_filter!(query, field, operator, values = '')
       available = query.available_filters[field]
-      unless available
-        raise ToolError, "Unknown filter #{field.inspect}. Call with describe: true for the ones this Redmine accepts"
-      end
+      unknown_filter!(query, field) unless available
 
       legal = operators_for(available[:type])
       unless legal.include?(operator)
@@ -177,9 +178,37 @@ module RedmineMcpPlugin
     # One filter by name, the same refusal as a filter that is set.
     def describe_one(query, field)
       filter = query.available_filters[field]
-      raise ToolError, "Unknown filter #{field.inspect}. Call with describe: true for the ones this Redmine accepts" if filter.nil?
+      unknown_filter!(query, field) if filter.nil?
 
       describe_filter(field, filter)
+    end
+
+    # The refusal names the close filters, so a wrong guess costs one call,
+    # not a full describe: a field or label sharing a word with the unknown
+    # name, else a spelling match on the field names.
+    def unknown_filter!(query, field)
+      close = close_filters(query, field)
+      if close.empty?
+        raise ToolError, "Unknown filter #{field.inspect}. Call with describe: true for the ones this Redmine accepts"
+      end
+
+      raise ToolError, "Unknown filter #{field.inspect}. Did you mean #{close.join(', ')}? " \
+                       'Call with describe: "<field>" for one filter, or describe: true for all'
+    end
+
+    def close_filters(query, field)
+      wanted = filter_words(field)
+      close  = query.available_filters.select do |name, filter|
+        words = filter_words(name) | filter_words(filter[:name])
+        words.any? { |word| wanted.any? { |w| word.start_with?(w) || w.start_with?(word) } }
+      end.keys
+      close = DidYouMean::SpellChecker.new(dictionary: query.available_filters.keys).correct(field.to_s) if close.empty?
+      close.first(MAX_SUGGESTIONS)
+    end
+
+    # Words of three letters or more, so "id" and "cf" match nothing.
+    def filter_words(name)
+      name.to_s.downcase.scan(/[a-z0-9]+/).select { |word| word.size >= 3 }
     end
 
     # redmineup_tags registers its filter type with no operators; its statement

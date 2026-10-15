@@ -78,7 +78,7 @@ module RedmineMcpPlugin
       end
 
       def entry_state(entry, ids)
-        {
+        state = {
           id: entry.id,
           hours: entry.hours.to_f,
           activity: entry.activity&.name,
@@ -86,9 +86,11 @@ module RedmineMcpPlugin
           comments: entry.comments,
           issue_id: entry.issue_id,
           project_identifier: entry.project&.identifier,
-          custom_fields: saved_custom_fields(entry, ids),
           url: entry.issue ? absolute_url(:issue_url, entry.issue) : absolute_url(:project_time_entries_url, entry.project)
         }
+        # No key when none were sent: an empty list reads as "no custom fields".
+        state[:custom_fields] = saved_custom_fields(entry, ids) if ids.any?
+        state
       end
     end
   end

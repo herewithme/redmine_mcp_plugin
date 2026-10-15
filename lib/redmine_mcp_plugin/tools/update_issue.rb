@@ -7,7 +7,8 @@ module RedmineMcpPlugin
            title: 'Update issue',
            description: 'Change an issue: any field get_issue_fields lists, custom fields, watchers, tags, ' \
                         'with an optional note in the same journal. Refused by name when the role or ' \
-                        'workflow forbids. "none" clears an optional date or reference. End with the url.',
+                        'workflow forbids; then do not retry without the refused fields: tell the user and ' \
+                        'ask. "none" clears an optional date or reference. End with the url.',
            permission: %i[edit_issues edit_own_issues],
            scopes: %i[manage_subtasks add_issue_watchers delete_issue_watchers set_issues_private set_own_issues_private],
            plugin_scopes: { redmineup_tags: %i[edit_tags create_tags] },

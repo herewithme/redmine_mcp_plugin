@@ -6,7 +6,8 @@ module RedmineMcpPlugin
       tool 'create_issue',
            title: 'Create issue',
            description: 'Create an issue. Call get_issue_fields first for what this user may set. ' \
-                        '"none" clears an optional date or reference. End with the url.',
+                        '"none" clears an optional date or reference. If refused, do not retry without ' \
+                        'the refused fields: tell the user and ask. End with the url.',
            permission: :add_issues,
            scopes: %i[manage_subtasks add_issue_watchers set_issues_private set_own_issues_private],
            plugin_scopes: { redmine_checklists: %i[edit_checklists], redmineup_tags: %i[edit_tags create_tags] },

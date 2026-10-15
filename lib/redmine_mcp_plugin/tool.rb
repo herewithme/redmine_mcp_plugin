@@ -744,7 +744,10 @@ module RedmineMcpPlugin
       }
       sent = arguments.keys.map { |key| STATE_ALIASES.fetch(key, key) }
       STATE_READERS.each { |name, read| state[name.to_sym] = read.call(issue) if sent.include?(name) }
-      state[:custom_fields] = saved_custom_fields(issue, custom_field_ids(arguments))
+      # Only the fields that were sent, and no key when none were: an empty
+      # list reads as "this issue has no custom fields".
+      ids = custom_field_ids(arguments)
+      state[:custom_fields] = saved_custom_fields(issue, ids) if ids.any?
       state[:url] = absolute_url(:issue_url, issue)
       state
     end

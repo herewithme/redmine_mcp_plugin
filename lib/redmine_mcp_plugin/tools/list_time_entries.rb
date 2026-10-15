@@ -31,8 +31,8 @@ module RedmineMcpPlugin
            schema: {
              'type' => 'object',
              'properties' => {
-               'describe' => { 'type' => 'boolean',
-                               'description' => 'Return the available filters, sortable and groupable fields instead of entries.' },
+               'describe' => { 'type' => %w[boolean string],
+                               'description' => 'true: the available filters, sortable and groupable fields instead of entries; a field name: that filter only.' },
                'project' => { 'type' => %w[string integer],
                               'description' => 'Restrict to one project (identifier or numeric id).' },
                'issue' => { 'type' => 'integer', 'description' => 'Restrict to one issue id.' },
@@ -76,7 +76,7 @@ module RedmineMcpPlugin
         authorize!(:view_time_entries, scoped) if scoped
 
         query = TimeEntryQuery.new(name: '_', project: scoped)
-        return describe(query) if arguments['describe']
+        return describe(query, arguments['describe']) if arguments['describe']
 
         apply_filters!(query, arguments, issue, scoped)
         apply_sort!(query, arguments['sort'], default: [%w[spent_on desc]])
