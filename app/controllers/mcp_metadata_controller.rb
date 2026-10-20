@@ -11,7 +11,8 @@
 # it has any credential:
 #
 #   RFC 9728  /.well-known/oauth-protected-resource[/mcp]  what protects /mcp
-#   RFC 8414  /.well-known/oauth-authorization-server      where to get a token
+#             /.well-known/oauth-protected-resource/mcp/<path>, one per registered endpoint
+#   RFC 8414  /.well-known/oauth-authorization-server      where to get a token, shared
 #
 # The second describes Redmine core's own Doorkeeper provider rather than
 # anything this plugin implements. Redmine does not publish it, and a client
@@ -27,23 +28,28 @@ class McpMetadataController < ApplicationController
 
   before_action :require_oauth2_discoverable
 
+  # The root form and /mcp describe the main endpoint; /mcp/<path> the one registered there, whose
+  # resource must equal its connector URL exactly.
   def protected_resource
+    endpoint = RedmineMcpPlugin::Endpoint.find(request.path_parameters[:endpoint])
     render json: {
-      resource: mcp_resource_url,
+      resource: mcp_resource_url(endpoint),
       authorization_servers: [root_url_without_trailing_slash],
-      scopes_supported: supported_scopes,
+      scopes_supported: supported_scopes(endpoint),
       bearer_methods_supported: %w[header],
-      resource_name: 'Redmine MCP Server',
-      resource_documentation: 'https://github.com/stenikgroup/redmine_mcp_plugin'
-    }
+      resource_name: endpoint.resource_name,
+      resource_documentation: endpoint.documentation
+    }.compact
   end
 
+  # Shared, and still lists /mcp's scopes. Clients pick scopes from the resource document; one that reads
+  # this list instead would, with every endpoint's here, ask /mcp's Application for scopes it lacks.
   def authorization_server
     payload = {
       issuer: root_url_without_trailing_slash,
       authorization_endpoint: "#{root_url_without_trailing_slash}/oauth/authorize",
       token_endpoint: "#{root_url_without_trailing_slash}/oauth/token",
-      scopes_supported: supported_scopes,
+      scopes_supported: supported_scopes(RedmineMcpPlugin::Endpoint.main),
       response_types_supported: %w[code],
       grant_types_supported: %w[authorization_code refresh_token],
       token_endpoint_auth_methods_supported: %w[client_secret_basic client_secret_post],
@@ -73,25 +79,25 @@ class McpMetadataController < ApplicationController
     request.base_url + (Redmine::Utils.relative_url_root.presence || '')
   end
 
-  def mcp_resource_url
-    "#{root_url_without_trailing_slash}/mcp"
+  def mcp_resource_url(endpoint)
+    "#{root_url_without_trailing_slash}#{endpoint.mount_path}"
   end
 
   # Redmine registers every permission name as an OAuth2 scope, plus 'admin',
   # which is what lets a token be strictly weaker than the user who issued it.
   # Doorkeeper's own configuration is the authoritative list; AccessControl is
   # the fallback if that ever moves.
-  def supported_scopes
+  def supported_scopes(endpoint)
     return [] unless defined?(Doorkeeper)
 
-    # Only what this server's tools declare or check. Advertising every scope
+    # Only what this endpoint's tools declare or check. Advertising every scope
     # Doorkeeper knows would have a client request ~200, `admin` among them.
-    scopes = RedmineMcpPlugin::Registry.all
-                                       .select(&:installed?)
-                                       .reject { |tool| tool.write? && RedmineMcpPlugin::Settings.read_only? }
-                                       .flat_map { |tool| tool.mcp_permissions + tool.mcp_scopes }
-                                       .map(&:to_s)
-                                       .uniq
+    scopes = endpoint.tools
+                     .select(&:installed?)
+                     .reject { |tool| tool.write? && RedmineMcpPlugin::Settings.read_only? }
+                     .flat_map { |tool| tool.mcp_permissions + tool.mcp_scopes }
+                     .map(&:to_s)
+                     .uniq
 
     # Intersected with what Doorkeeper accepts, so a permission renamed by a
     # plugin cannot put an unconsentable scope in the document.

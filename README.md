@@ -397,6 +397,83 @@ it gets:
 So an unauthenticated `GET /mcp` returns 401, not 405. That is the intended behaviour: the endpoint
 does not describe itself to anonymous callers beyond pointing them at the discovery documents.
 
+## Additional endpoints
+
+Another Redmine plugin can mount a separate MCP server under `/mcp/<path>`. That server has its own
+URL, its own tools, its own scopes and its own claude.ai connector. Nothing about that plugin's domain
+lives here. The plugin registers the endpoint from its `init.rb`:
+
+```ruby
+# defined? rather than requires_redmine_plugin, which depends on load order; without this plugin the
+# extension then simply mounts nothing instead of stopping Redmine booting.
+if defined?(RedmineMcpPlugin::Endpoint)
+  RedmineMcpPlugin::Endpoint.register(
+    'invoices',                                      # served at /mcp/invoices
+    name:         'redmine-mcp-plugin-invoices',     # serverInfo.name
+    title:        'Redmine Invoices',                # serverInfo.title and the resource_name
+    version:      RedmineMcpPluginInvoices::VERSION, # optional, defaults to this plugin's
+    instructions: 'Client offers in Redmine, from the RedmineUP invoices plugin. ...',
+    tools: [RedmineMcpPluginInvoices::Tools::ListInvoices, RedmineMcpPluginInvoices::Tools::GetInvoice]
+  )
+end
+```
+
+The list of tools is explicit, as `Registry` is for `/mcp`. Each entry is a `RedmineMcpPlugin::Tool`
+subclass, and core tools such as `RedmineMcpPlugin::Tools::WhoAmI` may be listed too. A bad path, a
+missing field, a class that is not a `Tool`, a duplicate tool name, or a path another plugin already
+took raises at boot. Plugins may load in any order. The routes are drawn once, here, and each request
+is checked against the registered paths. A path nobody registered stays a 404.
+
+What an extension endpoint inherits:
+
+- **Settings.** It obeys the enabled switch: off closes every endpoint and every discovery document.
+  It also obeys the authentication modes, the REST API gate, read-only mode, the allowed origins and
+  `max_results`. It has no switch of its own.
+- **Request handling.** Authentication, the Origin and protocol-version checks, the JSON-RPC handling
+  and the status codes all come from here.
+- **Tool behaviour.** It gets the `Tool` base: the permission check through `User#allowed_to?`, the
+  read-only refusal, schema validation and coercion, and the helpers. Every refusal is worded as here.
+- **Text.** The formatting guide is appended to its instructions, and the parameter suffixes come with
+  it.
+- **Doorkeeper.** It shares Doorkeeper and the authorization-server document, and the icon.
+
+Its tools/list and advertised scopes come from its own tools, computed the same way as `/mcp`'s and
+respecting read-only mode.
+
+Every extension tool should declare a permission. Tokens are not bound to an endpoint: a token issued
+to one connector is accepted by the other. It then sees only the tools whose permission both its
+scopes and the user's roles grant. A tool with no permission is open to any token the endpoint
+accepts.
+
+URLs an extension endpoint at `/mcp/<path>` uses:
+
+```
+POST   /mcp/<path>                                         MCP; GET and DELETE answer 405, as on /mcp
+GET    /.well-known/oauth-protected-resource/mcp/<path>    its RFC 9728 document; resource is .../mcp/<path>
+GET    /.well-known/oauth-authorization-server             shared
+GET    /oauth/authorize, POST /oauth/token                 shared, Redmine's Doorkeeper
+```
+
+A 401 from `/mcp/<path>` points at its own resource document. The root
+`/.well-known/oauth-protected-resource` keeps describing `/mcp`.
+
+What an administrator configures:
+
+1. **Install and restart.** Install the plugin and restart, as in Deployment.
+2. **Create the OAuth Application.** Use one per connector: never share `/mcp`'s.
+   - Create it under Administration → Applications, with redirect URI
+     `https://claude.ai/api/mcp/auth_callback`.
+   - Enable at least the scopes that `/.well-known/oauth-protected-resource/mcp/<path>` lists.
+   - A separate Application caps each connector at its own scopes, so a token from the `/mcp`
+     connector can never carry the extension's scopes.
+   - Each can be revoked and its secret rotated without touching the other.
+3. **Grant the permissions.** Give the extension's permissions to the roles of the people who should
+   use it.
+4. **Add the connector in claude.ai.** Use URL `https://<host>/mcp/<path>` and that Application's
+   client id and secret.
+5. **Open the firewall.** `/mcp/<path>` must be allowed from Anthropic's range. A rule written as a
+   prefix on `/mcp` covers it; a rule matching `/mcp` exactly does not.
+
 ## Client configuration
 
 For a client that takes a fixed header, such as a `curl` test. Access tokens expire after two hours,
