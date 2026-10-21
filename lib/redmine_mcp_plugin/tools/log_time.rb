@@ -23,9 +23,7 @@ module RedmineMcpPlugin
                                'description' => 'Activity name, from list_enumerations for this project.' },
                'spent_on' => { 'type' => 'string', 'description' => 'ISO-8601 date. Defaults to today.' },
                'comments' => { 'type' => 'string', 'description' => 'What the time was spent on.' },
-               'custom_field_values' => { 'type' => 'object',
-                                    'description' => 'Custom field values keyed by numeric field id. Send the value, ' \
-                                                     'never the label.' }
+               'custom_field_values' => { 'type' => 'object', 'description' => 'By field id; the value, never the label.' }
              },
              'required' => %w[hours activity],
              'additionalProperties' => false

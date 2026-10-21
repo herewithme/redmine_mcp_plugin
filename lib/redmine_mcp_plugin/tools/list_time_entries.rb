@@ -48,10 +48,9 @@ module RedmineMcpPlugin
                               'description' => 'Any other filter, keyed by field name from describe. A value may be ' \
                                                '{"operator": "><", "values": ["1", "5"]}, or a bare string or array, ' \
                                                'which means operator "=".' },
-               'sort' => { 'type' => 'string',
-                           'description' => 'field:direction, e.g. "spent_on:asc". Direction defaults to desc.' },
+               'sort' => { 'type' => 'string', 'description' => 'field:asc or field:desc; desc by default.' },
                'offset' => { 'type' => 'integer', 'minimum' => 0,
-                             'description' => 'Rows to skip, for paging past the server cap. Defaults to 0.' },
+                             'description' => 'Rows to skip, for paging past the server cap.' },
                'limit' => { 'type' => 'integer', 'minimum' => 1, 'description' => 'Maximum entries to return.' }
              },
              'additionalProperties' => false
@@ -193,9 +192,7 @@ module RedmineMcpPlugin
 
       # Core's own rule, which honours the roles a field is restricted to.
       def custom_fields_for(entry)
-        entry.visible_custom_field_values(user).map do |value|
-          { id: value.custom_field_id, name: value.custom_field.name, value: value.value }
-        end
+        entry.visible_custom_field_values(user).map { |value| custom_field_row(value) }
       end
     end
   end

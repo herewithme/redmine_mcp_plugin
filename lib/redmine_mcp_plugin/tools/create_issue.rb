@@ -37,8 +37,7 @@ module RedmineMcpPlugin
                'watcher_users' => { 'type' => 'array', 'description' => 'User or group ids, or "me".' },
                'checklists' => { 'type' => 'array', 'description' => 'Item subjects.' },
                'tag_list' => { 'type' => 'array', 'description' => 'Tag names.' },
-               'custom_field_values' => { 'type' => 'object',
-                                          'description' => 'By numeric field id, e.g. {"7": "3"}; the value, never the label.' }
+               'custom_field_values' => { 'type' => 'object', 'description' => 'By field id; the value, never the label.' }
              },
              'required' => %w[project subject],
              'additionalProperties' => false

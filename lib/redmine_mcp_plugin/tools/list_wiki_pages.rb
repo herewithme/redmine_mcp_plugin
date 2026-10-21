@@ -13,7 +13,7 @@ module RedmineMcpPlugin
                'project' => { 'type' => %w[string integer],
                              'description' => 'Project identifier or numeric id.' },
                'offset' => { 'type' => 'integer', 'minimum' => 0,
-                             'description' => 'Rows to skip, for paging past the server cap. Defaults to 0.' },
+                             'description' => 'Rows to skip, for paging past the server cap.' },
                'limit' => { 'type' => 'integer', 'minimum' => 1 }
              },
              'required' => %w[project],

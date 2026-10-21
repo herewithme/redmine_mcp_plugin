@@ -61,13 +61,12 @@ module RedmineMcpPlugin
                               'description' => 'Any other filter, keyed by field name from describe. A value may be ' \
                                                '{"operator": "><", "values": ["1", "5"]}, or a bare string or array, ' \
                                                'which means operator "=".' },
-               'sort' => { 'type' => 'string',
-                           'description' => 'field:direction, e.g. "priority:desc". Direction defaults to desc.' },
+               'sort' => { 'type' => 'string', 'description' => 'field:asc or field:desc; desc by default.' },
                'group_by' => { 'type' => 'string',
                                'description' => 'Group the whole filtered set and return a count per group, ' \
                                                 'e.g. "assigned_to". Fields from describe.' },
                'offset' => { 'type' => 'integer', 'minimum' => 0,
-                             'description' => 'Rows to skip, for paging past the server cap. Defaults to 0.' },
+                             'description' => 'Rows to skip, for paging past the server cap.' },
                'limit' => { 'type' => 'integer', 'minimum' => 1, 'description' => 'Maximum issues to return.' }
              },
              'additionalProperties' => false

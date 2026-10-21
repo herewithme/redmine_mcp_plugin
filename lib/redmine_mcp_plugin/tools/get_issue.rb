@@ -21,6 +21,9 @@ module RedmineMcpPlugin
              'additionalProperties' => false
            }
 
+      # The details core's issue history names, by show_detail's own list.
+      NAMED_DETAILS = %w[project_id status_id tracker_id assigned_to_id priority_id category_id fixed_version_id].freeze
+
       private
 
       def perform(arguments)
@@ -67,14 +70,17 @@ module RedmineMcpPlugin
       # Issue#visible_custom_field_values applies per-field role visibility.
       # Reading custom_field_values directly would leak fields core hides.
       def visible_custom_fields(issue)
-        issue.visible_custom_field_values.map do |value|
-          { id: value.custom_field_id, name: value.custom_field.name, value: value.value }
-        end
+        issue.visible_custom_field_values.map { |value| custom_field_row(value) }
       end
 
       # Journal#notes can be private (private_notes), and core gates that on
       # :view_private_notes. Journal.visible applies exactly that rule.
       def journals_for(issue)
+        # Core's history lookup names a project by Project#visible?, which reads User.current.
+        raise ToolError, 'You do not have permission to do that' unless User.current == user
+
+        # Fresh per call: it caches names, and a project's name depends on who asks.
+        history = Class.new { include IssuesHelper }.new
         issue.journals.visible(user).includes(:user).order(:created_on).map do |journal|
           {
             id: journal.id,
@@ -82,12 +88,21 @@ module RedmineMcpPlugin
             notes: journal.notes.presence,
             private_notes: journal.private_notes?,
             created_on: iso(journal.created_on),
-            details: journal.visible_details(user).map do |detail|
-              { property: detail.property, name: detail.prop_key,
-                old_value: detail.old_value, new_value: detail.value }
-            end
+            details: journal.visible_details(user).map { |detail| detail_row(detail, history) }
           }
         end
+      end
+
+      # As the issue history shows them: a record by its name, an id it cannot name as the id.
+      def detail_row(detail, history)
+        old_value = detail.old_value
+        new_value = detail.value
+        if detail.property == 'attr' && NAMED_DETAILS.include?(detail.prop_key)
+          field     = detail.prop_key.delete_suffix('_id')
+          old_value = history.find_name_by_reflection(field, old_value) || old_value
+          new_value = history.find_name_by_reflection(field, new_value) || new_value
+        end
+        { property: detail.property, name: detail.prop_key, old_value: old_value, new_value: new_value }
       end
     end
   end

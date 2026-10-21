@@ -9,6 +9,7 @@ module RedmineMcpPlugin
            permission: :add_issue_notes,
            scopes: %i[set_notes_private],
            rendered: %w[notes],
+           checks_blank: %w[notes],
            write: true,
            schema: {
              'type' => 'object',

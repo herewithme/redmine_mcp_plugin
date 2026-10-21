@@ -13,7 +13,7 @@ module RedmineMcpPlugin
                'name' => { 'type' => 'string',
                            'description' => 'Optional case-insensitive substring to filter project name or identifier by.' },
                'offset' => { 'type' => 'integer', 'minimum' => 0,
-                             'description' => 'Rows to skip, for paging past the server cap. Defaults to 0.' },
+                             'description' => 'Rows to skip, for paging past the server cap.' },
                'limit' => { 'type' => 'integer', 'description' => 'Maximum projects to return.', 'minimum' => 1 }
              },
              'additionalProperties' => false

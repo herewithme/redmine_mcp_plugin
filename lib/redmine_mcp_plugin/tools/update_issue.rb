@@ -39,13 +39,17 @@ module RedmineMcpPlugin
                'remove_watcher_users' => { 'type' => 'array', 'description' => 'User or group ids, or "me".' },
                'add_tag_list' => { 'type' => 'array', 'description' => 'Tag names.' },
                'remove_tag_list' => { 'type' => 'array', 'description' => 'Tag names.' },
-               'custom_field_values' => { 'type' => 'object',
-                                          'description' => 'By numeric field id, e.g. {"7": "3"}; the value, never the label.' },
+               'custom_field_values' => { 'type' => 'object', 'description' => 'By field id; the value, never the label.' },
                'notes' => { 'type' => 'string', 'description' => 'Note recorded with this change.' }
              },
              'required' => %w[issue],
              'additionalProperties' => false
            }
+
+      class << self
+        # The tags plugin is named only while it is installed.
+        def mcp_description = plugin?(:redmineup_tags) ? super : super.sub(' tags,', '')
+      end
 
       private
 

@@ -10,6 +10,7 @@ module RedmineMcpPlugin
            permission: :edit_own_issue_notes,
            scopes: %i[set_notes_private],
            rendered: %w[notes],
+           checks_blank: %w[notes],
            write: true,
            destructive: true,
            schema: {
