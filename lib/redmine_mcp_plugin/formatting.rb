@@ -20,8 +20,7 @@ module RedmineMcpPlugin
         'row, ``` fenced code, [text](url) links; #123 links an issue. Textile syntax does not render.'
     }.freeze
 
-    PLAIN = 'Fields marked "Plain text" take no markup. Custom fields render only when ' \
-            'get_issue_fields reports them rendered.'
+    PLAIN = 'Fields marked "Plain text" take no markup.'
 
     # Company style, not a Redmine rule: told to the agent, never applied by the server.
     DASHES = 'Write every dash as a plain hyphen-minus "-", never an en dash "–" or an em dash "—", ' \
@@ -48,10 +47,17 @@ module RedmineMcpPlugin
       "Plain text. #{DASH_RULE}, #{DASH_NEVER}"
     end
 
-    def guide
+    # fields_tool is the endpoint's own tool that reports custom fields, or nil.
+    def guide(fields_tool = nil)
       format = GUIDES[Setting.text_formatting.to_s]
-      text   = format ? "#{format} #{PLAIN}" : 'No text field renders markup; write plain text everywhere.'
+      text   = format ? "#{format} #{PLAIN} #{custom_fields_rule(fields_tool)}" : 'No text field renders markup; write plain text everywhere.'
       "#{text} #{DASHES}"
+    end
+
+    def custom_fields_rule(fields_tool)
+      return 'Custom fields render only when their definition enables text formatting.' if fields_tool.nil?
+
+      "Custom fields render only when #{fields_tool} reports them rendered."
     end
   end
 end

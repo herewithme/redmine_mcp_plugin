@@ -57,7 +57,7 @@ an explicit step, not something the defaults do for you.
 ### OAuth application scopes
 
 Administration → Applications → the MCP application. Enable at least the scopes the server
-advertises. Enabling more is fine — verified live, consent succeeds — but fewer fails with
+advertises. Enabling more is fine - verified live, consent succeeds - but fewer fails with
 `invalid_scope`, because the client requests exactly what `scopes_supported` lists. The permission
 names below are the scope; the label is what the English UI shows, and several labels repeat across
 sections.
@@ -74,8 +74,8 @@ sections.
 | `add_issues` | Add issues | Issue tracking |
 | `edit_issues` | Edit issues | Issue tracking |
 | `edit_own_issues` | Edit own issues | Issue tracking |
-| `add_issue_notes` | Add notes | Issue tracking — **not** the "Add notes" under Contacts |
-| `log_time` | Log spent time | Time tracking — **not** "Log spent time for other users" |
+| `add_issue_notes` | Add notes | Issue tracking - **not** the "Add notes" under Contacts |
+| `log_time` | Log spent time | Time tracking - **not** "Log spent time for other users" |
 | `set_notes_private` | Set notes as private | Issue tracking |
 | `edit_own_issue_notes` | Edit own notes | Issue tracking |
 | `manage_subtasks` | Manage subtasks | Issue tracking |
@@ -110,7 +110,7 @@ Two changes are ours, both in this repository.
 ### `supported_scopes`
 
 `app/controllers/mcp_metadata_controller.rb` enumerates the OAuth2 scopes advertised in both
-discovery documents. Upstream advertised every scope Doorkeeper knows — every Redmine permission
+discovery documents. Upstream advertised every scope Doorkeeper knows - every Redmine permission
 plus `admin`, ~200 in all. Claude requests exactly what `scopes_supported` lists, so consent either
 failed with `invalid_scope` or granted far more than the tools use.
 
@@ -125,7 +125,7 @@ Read-only gives `view_project`, `view_issues`, `view_issue_watchers`, `view_wiki
 joins the read-only set and `done_checklists` and `edit_checklists` the write set; with
 redmineup_tags, `create_tags` and `edit_tags` join the write set. The OAuth application in
 Redmine must enable at least these; it may enable more. The same file probes Doorkeeper for PKCE support rather than
-assuming it, and advertises `S256` only — never `plain`, which MCP clients may not select.
+assuming it, and advertises `S256` only - never `plain`, which MCP clients may not select.
 
 On our instance PKCE support is confirmed: `/.well-known/oauth-authorization-server` returns
 `"code_challenge_methods_supported": ["S256"]`, verified against the live server.
@@ -136,7 +136,7 @@ Redmine's layouts, and the plugins that extend them, reference controllers relat
 `controller: 'my'` in the account link, `controller: 'people'` in redmine_people's avatar helper.
 Rails resolves a relative controller against the one in the current request's path parameters,
 which inside Doorkeeper is `doorkeeper/authorizations`, so every such reference becomes
-`doorkeeper/<name>` and raises `UrlGenerationError` — a 500 on the OAuth2 consent screen of any
+`doorkeeper/<name>` and raises `UrlGenerationError` - a 500 on the OAuth2 consent screen of any
 install whose layout links to a user, which includes ours.
 
 `lib/redmine_mcp_plugin/doorkeeper_url_options.rb` strips the `doorkeeper/` prefix from the recalled
@@ -191,7 +191,7 @@ Every tool declares the Redmine permission it needs. Two checks run before it do
 
 Both are needed, and neither subsumes the other. The `.visible` scopes are built on
 `Project.allowed_to_condition`, which calls `role.allowed_to?(permission)` with **no scope
-argument** — so they honour roles but are blind to OAuth scopes. A token scoped to `view_wiki_pages`
+argument** - so they honour roles but are blind to OAuth scopes. A token scoped to `view_wiki_pages`
 but not `view_issues` would still see issues if `.visible` were the only check. In the other
 direction, `allowed_to?` alone would return rows from projects the user is not a member of.
 
@@ -208,16 +208,16 @@ every tracker in the project.
 
 Of the four that this plugin exercises:
 
-- `view_issues` — handled by core. `Issue.visible_condition` applies the tracker filter in SQL, and
+- `view_issues` - handled by core. `Issue.visible_condition` applies the tracker filter in SQL, and
   every read tool goes through `Issue.visible(user)`.
-- `add_issues` — `create_issue` checks `Issue#allowed_target_trackers` and **refuses** a tracker the
+- `add_issues` - `create_issue` checks `Issue#allowed_target_trackers` and **refuses** a tracker the
   caller may not use, naming it. Core silently substitutes the first permitted tracker instead,
   because core is redisplaying a form to a human who can see the result; an agent reports success to
   somebody who will not check. With no tracker named, the tool uses the only permitted one or refuses
   and lists them.
-- `edit_issues` and `edit_own_issues` — `update_issue` checks `Issue#attributes_editable?`, which
+- `edit_issues` and `edit_own_issues` - `update_issue` checks `Issue#attributes_editable?`, which
   applies both per tracker, on top of the scope-aware `allowed_to?`.
-- `add_issue_notes` — `add_issue_note` checks `Issue#notes_addable?`. Core applies this through
+- `add_issue_notes` - `add_issue_note` checks `Issue#notes_addable?`. Core applies this through
   `safe_attributes`, a path the tool does not take.
 
 ### Private notes
@@ -229,7 +229,7 @@ visible if it is not private, or the caller wrote it, or the caller's role holds
 That filter is built on `Project.allowed_to_condition` and is therefore **not narrowed further by
 OAuth scope**. A token whose scopes omit `view_private_notes` will still see private notes if the
 user's role grants it. This is deliberate on our side: roles are the access boundary we rely on, and
-token scopes are a second, coarser restriction on top of them — not the thing that decides who may
+token scopes are a second, coarser restriction on top of them - not the thing that decides who may
 read what.
 
 Writing one is the other way round: `add_issue_note` and `update_issue_note` with `private_notes: true`
@@ -287,7 +287,7 @@ without `_id` or `_ids` (`issue`, `project`, `news`, `journal`, `parent`, `assig
 Redmine's query field names verbatim; a null value means not sent, never "clear it".
 
 Parameters use one shape per concept across tools: an issue is `issue`, a numeric id; a project is
-`project`, an identifier or numeric id; a news item is `news`; a person — `assigned_to`, `author`, `user` — is a user id from
+`project`, an identifier or numeric id; a news item is `news`; a person - `assigned_to`, `author`, `user` - is a user id from
 `list_users`, or `"me"`; `parent` is an issue id; `category` and `fixed_version` are a name or an id
 from `get_issue_fields`; the string `"none"` clears an optional date or reference (`parent`, `category`,
 `fixed_version`, `assigned_to`, `start_date`, `due_date`). Filters that name a project, an issue, a version or a category through
@@ -382,7 +382,7 @@ none and are unaffected.
 ### GET and DELETE on `/mcp`
 
 The endpoint has no server-to-client stream and never issued a session, so `GET` and `DELETE` both
-end in 405 — but **only for a request that has already authenticated**. Authentication is a
+end in 405 - but **only for a request that has already authenticated**. Authentication is a
 `before_action` and runs first, so the status a client actually sees depends on how far up the chain
 it gets:
 
@@ -407,22 +407,39 @@ lives here. The plugin registers the endpoint from its `init.rb`:
 # defined? rather than requires_redmine_plugin, which depends on load order; without this plugin the
 # extension then simply mounts nothing instead of stopping Redmine booting.
 if defined?(RedmineMcpPlugin::Endpoint)
-  RedmineMcpPlugin::Endpoint.register(
-    'invoices',                                      # served at /mcp/invoices
-    name:         'redmine-mcp-plugin-invoices',     # serverInfo.name
-    title:        'Redmine Invoices',                # serverInfo.title and the resource_name
-    version:      RedmineMcpPluginInvoices::VERSION, # optional, defaults to this plugin's
-    instructions: 'Client offers in Redmine, from the RedmineUP invoices plugin. ...',
-    tools: [RedmineMcpPluginInvoices::Tools::ListInvoices, RedmineMcpPluginInvoices::Tools::GetInvoice]
-  )
+  begin
+    RedmineMcpPlugin::Endpoint.register(
+      'invoices',                                      # served at /mcp/invoices
+      name:         'redmine-mcp-plugin-invoices',     # serverInfo.name
+      title:        'Redmine Invoices',                # serverInfo.title and the resource_name
+      version:      RedmineMcpPluginInvoices::VERSION, # optional, defaults to this plugin's
+      instructions: 'Client offers in Redmine, from the RedmineUP invoices plugin. ...',
+      hints:        { users: 'get_invoice_fields', fields: 'get_invoice_fields' }, # optional, see below
+      tools: [RedmineMcpPluginInvoices::Tools::ListInvoices, RedmineMcpPluginInvoices::Tools::GetInvoiceFields]
+    )
+  rescue StandardError => e # an older redmine_mcp_plugin refuses hints: as an unknown keyword
+    Rails.logger.error("/mcp/invoices is not served: #{e.class}: #{e.message}")
+  end
 end
 ```
 
 The list of tools is explicit, as `Registry` is for `/mcp`. Each entry is a `RedmineMcpPlugin::Tool`
-subclass, and core tools such as `RedmineMcpPlugin::Tools::WhoAmI` may be listed too. A bad path, a
-missing field, a class that is not a `Tool`, a duplicate tool name, or a path another plugin already
-took raises at boot. Plugins may load in any order. The routes are drawn once, here, and each request
-is checked against the registered paths. A path nobody registered stays a 404.
+subclass, and core tools such as `RedmineMcpPlugin::Tools::WhoAmI` may be listed too. Plugins may load
+in any order. The routes are drawn once, here, and each request is checked against the registered
+paths. A path nobody registered stays a 404.
+
+`hints` names which of the endpoint's own tools the shared messages point to: `users` for a user id
+(the refusal of a wrong one, and the user filters in `describe`), `projects` for the project filters in
+`describe`, `fields` for the custom fields that render, in the formatting guide. A kind left out names
+no tool. `/mcp` points to `list_users`, `list_projects` and `get_issue_fields`. A core tool listed by an
+extension keeps its own description, which may name other core tools.
+
+An extension never stops Redmine booting. A bad path, a blank name, title or instructions, a class that
+is not a `Tool`, a duplicate tool name, a path another plugin already took, an unknown hint, or a hint
+naming a tool the endpoint does not list, is logged as an error and that endpoint is not served:
+`/mcp/<path>` answers 404, and `/mcp` and Redmine run on. An unknown or missing keyword raises in the
+extension's own `init.rb`, before the call reaches this plugin, so the extension guards its own call,
+as above.
 
 What an extension endpoint inherits:
 
@@ -433,8 +450,8 @@ What an extension endpoint inherits:
   and the status codes all come from here.
 - **Tool behaviour.** It gets the `Tool` base: the permission check through `User#allowed_to?`, the
   read-only refusal, schema validation and coercion, and the helpers. Every refusal is worded as here.
-- **Text.** The formatting guide is appended to its instructions, and the parameter suffixes come with
-  it.
+- **Text.** The formatting guide is appended to its instructions, naming its `fields` tool, and the
+  parameter suffixes come with it.
 - **Doorkeeper.** It shares Doorkeeper and the authorization-server document, and the icon.
 
 Its tools/list and advertised scopes come from its own tools, computed the same way as `/mcp`'s and

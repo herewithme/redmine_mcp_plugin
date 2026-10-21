@@ -11,7 +11,7 @@ module RedmineMcpPlugin
   # issue or a project's record, as field => { operator => kind }.
   module QueryTool
     # Their values are the user directory or the project list; describe names
-    # the paged tool that already answers those instead of inlining them.
+    # the endpoint's own tool that answers those, if any, instead of inlining them.
     USER_FILTERS    = %w[assigned_to_id author_id watcher_id updated_by last_updated_by user_id].freeze
     PROJECT_FILTERS = %w[project_id subproject_id].freeze
     MAX_VALUES      = 50
@@ -222,8 +222,12 @@ module RedmineMcpPlugin
                 operators: operators_for(filter[:type]) }
 
       # Returning early also skips evaluating the values lambda, a query each.
-      return entry.merge(values: nil, note: 'Ids come from list_users, or "me".') if user_valued?(field, filter)
-      return entry.merge(values: nil, note: 'Ids come from list_projects.')       if PROJECT_FILTERS.include?(field)
+      if user_valued?(field, filter)
+        return entry.merge(values: nil, note: hint(:users) ? "Ids come from #{hint(:users)}, or \"me\"." : 'User ids, or "me".')
+      end
+      if PROJECT_FILTERS.include?(field)
+        return entry.merge(values: nil, note: hint(:projects) ? "Ids come from #{hint(:projects)}." : 'Project ids.')
+      end
 
       values = Array(filter[:values])
       return entry if values.empty?

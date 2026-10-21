@@ -25,10 +25,12 @@ module RedmineMcpPlugin
       # they are advertised so a token can carry them, and gate nothing.
       # `rendered` names the parameters Redmine passes through its text formatter,
       # `plain` the ones it prints as they are; both get the dash rule when listed.
+      # `checks_blank` names required text the tool refuses blank itself, with its reason.
       # `plugin` ties the whole tool to an installed plugin, `plugin_properties`
       # and `plugin_scopes` tie single parameters and scopes to one.
       def tool(name, title:, description:, schema:, permission: nil, scopes: [], rendered: [], plain: [],
-               write: false, destructive: false, plugin: nil, plugin_properties: {}, plugin_scopes: {})
+               checks_blank: [], write: false, destructive: false, plugin: nil, plugin_properties: {},
+               plugin_scopes: {})
         @mcp_name          = name.to_s
         @mcp_title         = title
         @mcp_description   = description
@@ -37,6 +39,7 @@ module RedmineMcpPlugin
         @mcp_scopes        = scopes
         @mcp_rendered      = rendered
         @mcp_plain         = plain
+        @mcp_checks_blank  = checks_blank
         @mcp_write         = write
         @mcp_destructive   = destructive
         @mcp_plugin        = plugin
@@ -48,6 +51,7 @@ module RedmineMcpPlugin
       def destructive? = !!@mcp_destructive
       def mcp_rendered = Array(@mcp_rendered)
       def mcp_plain    = Array(@mcp_plain)
+      def mcp_checks_blank = Array(@mcp_checks_blank)
 
       # Read per call, never at class load: this plugin boots before some of
       # the plugins it looks for.
@@ -123,9 +127,10 @@ module RedmineMcpPlugin
     # `attr_writer :oauth_scope` on User with no matching reader, so the granted
     # scopes cannot be read back off the model once set -- the plugin has to
     # remember them itself.
-    def initialize(user, auth = {})
-      @user = user
-      @auth = auth || {}
+    def initialize(user, auth = {}, endpoint = Endpoint.main)
+      @user     = user
+      @auth     = auth || {}
+      @endpoint = endpoint
     end
 
     attr_reader :user, :auth
@@ -148,7 +153,9 @@ module RedmineMcpPlugin
       # The schemas are a contract with the caller, not a comment. Checked here
       # rather than in each tool so a tool cannot forget.
       schema = klass.effective_schema
-      SchemaValidator.validate!(schema, arguments)
+      # Blank text the tool checks itself was sent, so the tool can say why it refuses it.
+      sent = klass.mcp_checks_blank.select { |key| arguments[key].is_a?(String) }
+      SchemaValidator.validate!(schema.merge('required' => Array(schema['required']) - sent), arguments)
       # And normalised, so a tool never has to decide what the string "false"
       # means. It means false.
       arguments = SchemaValidator.coerce(schema, arguments)
@@ -163,6 +170,9 @@ module RedmineMcpPlugin
     end
 
     def plugin?(id) = self.class.plugin?(id)
+
+    # The endpoint's own tool for users, projects or fields; nil when it has none.
+    def hint(kind) = @endpoint.hints[kind]
 
     # --- helpers available to every tool ----------------------------------
 
@@ -285,7 +295,7 @@ module RedmineMcpPlugin
     def user_ref!(value, name)
       return value if value == 'me' || SchemaValidator.integerish?(value)
 
-      raise InvalidArgument, "#{name} must be a user id from list_users, or \"me\""
+      raise InvalidArgument, "#{name} must be a user id#{" from #{hint(:users)}" if hint(:users)}, or \"me\""
     end
 
     def user_id_from(value, name)
@@ -778,8 +788,14 @@ module RedmineMcpPlugin
         value = record.custom_field_values.detect { |v| v.custom_field_id.to_s == id.to_s }
         next if value.nil?
 
-        { id: value.custom_field_id, name: value.custom_field.name, value: value.value }
+        custom_field_row(value)
       end
+    end
+
+    # Core keeps an empty multiple field as [nil]; its API leaves blank values out, and so does this.
+    def custom_field_row(value)
+      shown = value.value.is_a?(Array) ? value.value.reject(&:blank?) : value.value
+      { id: value.custom_field_id, name: value.custom_field.name, value: shown }
     end
 
     # SchemaValidator does not walk into an object, so the shape is checked here.

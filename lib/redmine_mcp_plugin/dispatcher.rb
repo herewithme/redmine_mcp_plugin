@@ -75,7 +75,7 @@ module RedmineMcpPlugin
         capabilities: Protocol.capabilities,
         serverInfo: Protocol.implementation(endpoint),
         # The formatting guide follows the setting, so it is built per call.
-        instructions: "#{endpoint.instructions} #{Formatting.guide}"
+        instructions: "#{endpoint.instructions} #{Formatting.guide(endpoint.hints[:fields])}"
       }
     end
 
@@ -105,7 +105,7 @@ module RedmineMcpPlugin
       arguments = {} if arguments.blank?
       raise ToolError, 'arguments must be an object' unless arguments.is_a?(Hash)
 
-      payload = tool_class.new(user, auth).call(arguments.to_h)
+      payload = tool_class.new(user, auth, endpoint).call(arguments.to_h)
 
       {
         content: [{ type: 'text', text: JSON.pretty_generate(payload) }],
