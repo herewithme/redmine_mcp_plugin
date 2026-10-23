@@ -666,6 +666,22 @@ module RedmineMcpPlugin
       }
     end
 
+    # --- relations ----------------------------------------------------------
+
+    # As the issue page lists them: only those whose other issue the user may see.
+    def visible_relations(issue)
+      issue.relations.select { |relation| relation.other_issue(issue)&.visible?(user) }
+    end
+
+    # Seen from this issue. Redmine stores follows as precedes, and keeps a delay on nothing else.
+    def relation_rows(issue)
+      visible_relations(issue).map do |relation|
+        row = { relation_type: relation.relation_type_for(issue), issue: relation.other_issue(issue).id }
+        row[:delay] = relation.delay if relation.relation_type == IssueRelation::TYPE_PRECEDES
+        row
+      end
+    end
+
     # --- plugins: redmineup_tags and redmine_checklists -----------------------
 
     # The plugin applies tags silently only with edit_tags, and drops tags that

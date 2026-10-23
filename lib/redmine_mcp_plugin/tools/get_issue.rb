@@ -52,7 +52,8 @@ module RedmineMcpPlugin
           created_on: iso(issue.created_on),
           updated_on: iso(issue.updated_on),
           custom_fields: visible_custom_fields(issue),
-          attachments: issue.attachments.map { |attachment| attachment_row(attachment) }
+          attachments: issue.attachments.map { |attachment| attachment_row(attachment) },
+          relations: relation_rows(issue)
         }
 
         # Keys, not empty lists, so a missing permission never reads as "nobody".

@@ -83,6 +83,7 @@ sections.
 | `delete_issue_watchers` | Delete watchers | Issue tracking |
 | `set_issues_private` | Set issues public or private | Issue tracking |
 | `set_own_issues_private` | Set own issues public or private | Issue tracking |
+| `manage_issue_relations` | Manage issue relations | Issue tracking |
 | `manage_news` | Manage news | News |
 | `done_checklists` | Done checklist items | Issue tracking, with redmine_checklists installed |
 | `edit_checklists` | Edit checklist items | Issue tracking, with redmine_checklists installed |
@@ -123,7 +124,7 @@ Read-only gives `view_project`, `view_issues`, `view_issue_watchers`, `view_wiki
 `view_time_entries` and `view_news`; with writes on, add `add_issues`, `add_issue_notes`,
 `edit_issues`, `edit_own_issues`, `edit_own_issue_notes`, `log_time`, `set_notes_private`,
 `manage_subtasks`, `add_issue_watchers`, `delete_issue_watchers`, `set_issues_private`,
-`set_own_issues_private` and `manage_news`. With redmine_checklists installed, `view_checklists`
+`set_own_issues_private`, `manage_issue_relations` and `manage_news`. With redmine_checklists installed, `view_checklists`
 joins the read-only set and `done_checklists` and `edit_checklists` the write set; with
 redmineup_tags, `create_tags` and `edit_tags` join the write set. The OAuth application in
 Redmine must enable at least these; it may enable more. The same file probes Doorkeeper for PKCE support rather than
@@ -259,7 +260,7 @@ while read-only mode is on, which is the default.
 |---|---|
 | `whoami` | none. Reports identity, auth mode and granted scopes |
 | `list_projects`, `get_project` | `view_project` |
-| `search_issues`, `get_issue` | `view_issues`. `get_issue` adds the attachments, the watchers under `view_issue_watchers`, the checklist under `view_checklists`, and the tags |
+| `search_issues`, `get_issue` | `view_issues`. `get_issue` adds the attachments, the relations whose other issue the caller can see, the watchers under `view_issue_watchers`, the checklist under `view_checklists`, and the tags |
 | `get_attachment` | `view_issues`, through core's `Attachment#visible?`. Metadata, and the content of a text file within `file_max_size_displayed` |
 | `list_queries` | `view_issues`. Saved queries, filtered by `IssueQuery.visible` |
 | `list_wiki_pages`, `get_wiki_page` | `view_wiki_pages` |
@@ -274,6 +275,7 @@ while read-only mode is on, which is the default.
 | `update_issue_note` (write) | `edit_own_issue_notes`; only notes the caller wrote, plus `set_notes_private` to change privacy |
 | `add_issue_attachment` (write) | `edit_issues`, `edit_own_issues` or `add_issue_notes`, as core's `attachments_addable?`. A text file within `attachment_max_size` and the extension lists; saved with a journal, so watchers are mailed as for an issue update |
 | `update_issue_checklists` (write) | `edit_checklists` to add or rename, `done_checklists` or `edit_checklists` to tick or untick. Present only with redmine_checklists |
+| `update_issue_relations` (write) | `manage_issue_relations` on the issue's project, as core's relation form. Every relation type core has |
 | `log_time` (write) | `log_time`. Always for the authenticated user |
 | `create_news` (write) | `manage_news`. Publishes at once and, when `news_added` is a notified event, emails project members and news watchers; the tool tells the agent to get explicit confirmation first |
 | `update_news` (write) | `manage_news`. Editing sends no email |
@@ -283,7 +285,7 @@ while read-only mode is on, which is the default.
 `users_visibility` setting.
 
 Parameter names follow one rule: content fields keep Redmine's attribute names (`subject`,
-`description`, `notes`, `custom_field_values`, `tag_list`); a reference to a record is Redmine's name
+`description`, `notes`, `custom_field_values`, `tag_list`, `relation_type`, `delay`); a reference to a record is Redmine's name
 without `_id` or `_ids` (`issue`, `project`, `news`, `journal`, `parent`, `assigned_to`, `query`,
 `category`, `fixed_version`, `watcher_users`, `attachment`, `checklist`); only `filters` keeps
 Redmine's query field names verbatim; a null value means not sent, never "clear it".
@@ -330,6 +332,19 @@ adds a text file through core's token path, so `attachment_max_size` and the ext
 It saves the attachment with a journal, and Redmine mails the watchers when `issue_updated` or
 `issue_attachment_added` is a notified event. Binary attachments, and deleting anything, are out of
 scope.
+
+Relations: `get_issue` lists them as the issue page does, seen from the issue (`blocks` on one side is
+`blocked` on the other), only those whose other issue the caller can see, with `delay` only on
+`precedes` and `follows`. `update_issue_relations` removes, then adds, in one transaction, each entry
+through core's own path and validations and against what the entries before it leave; any refusal
+rolls everything back and names every entry with core's message in the caller's language. A `delay`
+on another type is refused, where core would drop it, and a duplicate only the unique index catches
+reads "has already been taken", as in core's form. `remove` takes the other issue and removes every
+relation with it: core allows one relation each way, so a pair can hold two. Each change is journaled
+once on both issues, and a `precedes` reschedules the following issue, as in core. `create_issue` and
+`update_issue` take no relations, for the reason they take no checklist items. The relation filters
+of `search_issues` are core's: issue ids for `=` and `!`, a project for `=p`, `=!p` and `!p`. Core
+reads one value for `=` and `!`, so a list of ids is joined into it rather than cut to its first.
 
 Plugins: checklists (redmine_checklists) and tags (redmineup_tags) exist for the agent only while the
 plugin is installed. `Redmine::Plugin.installed?` is read per request, not at boot, because plugins

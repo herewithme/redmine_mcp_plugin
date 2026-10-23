@@ -17,6 +17,7 @@ module RedmineMcpPlugin
     MAX_VALUES      = 50
     MAX_SUGGESTIONS = 5
     VERSION_FIELD   = { '=' => :version }.freeze
+    RELATION_NOTE   = 'For = and !, issue ids, comma separated; for =p, =!p and !p, a project from values.'
 
     private
 
@@ -32,6 +33,8 @@ module RedmineMcpPlugin
       end
 
       values = Array(values).map(&:to_s)
+      # Core reads only the first value of a relation's = and !, so a list of ids goes into it.
+      values = [values.join(',')] if available[:type] == :relation && %w[= !].include?(operator)
       # Core validates only numeric and date filters; a name here matches nothing and reads as zero.
       values.each { |value| user_ref!(value, field) if value.present? } if user_valued?(field, available)
       query.add_filter(field, operator, values)
@@ -220,6 +223,8 @@ module RedmineMcpPlugin
     def describe_filter(field, filter)
       entry = { field: field, name: filter[:name], type: filter[:type].to_s,
                 operators: operators_for(filter[:type]) }
+      # Core lists projects as a relation's values, which only its =p operators take.
+      entry[:note] = RELATION_NOTE if filter[:type] == :relation
 
       # Returning early also skips evaluating the values lambda, a query each.
       return entry.merge(values: nil, note: 'Ids come from list_users, or "me".') if user_valued?(field, filter)
