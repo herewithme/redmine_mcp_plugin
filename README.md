@@ -268,7 +268,7 @@ while read-only mode is on, which is the default.
 | `list_users` | none. Filtered by `Principal.visible` |
 | `list_time_entries` | `view_time_entries`. Totals, per-group hours and each entry's custom fields, filtered by `TimeEntry.visible` |
 | `get_issue_fields` | `view_issues`. What the caller may set on an issue, before a write |
-| `create_issue` (write) | `add_issues`, on the requested tracker, plus `manage_subtasks` for `parent`, `add_issue_watchers` for `watcher_users`, `set_issues_private` or `set_own_issues_private` for `is_private`, `edit_checklists` for `checklists`, `edit_tags` for `tag_list` and `create_tags` for a tag that does not exist yet |
+| `create_issue` (write) | `add_issues`, on the requested tracker, plus `manage_subtasks` for `parent`, `add_issue_watchers` for `watcher_users`, `set_issues_private` or `set_own_issues_private` for `is_private`, `edit_tags` for `tag_list` and `create_tags` for a tag that does not exist yet |
 | `update_issue` (write) | `edit_issues`, or `edit_own_issues` on one's own issue, on the issue's tracker, plus the per-field permissions of `create_issue` and `delete_issue_watchers` for `remove_watcher_users`. Watching or unwatching oneself needs none, as core's Watch link |
 | `add_issue_note` (write) | `add_issue_notes`, on the issue's tracker, plus `set_notes_private` for private notes |
 | `update_issue_note` (write) | `edit_own_issue_notes`; only notes the caller wrote, plus `set_notes_private` to change privacy |
@@ -299,7 +299,7 @@ answered with zero.
 Writes refuse rather than guess, and save nothing when they refuse: `create_issue` needs `tracker`
 when the project allows more than one, and `log_time` needs `activity`. `create_issue` and
 `update_issue` run every per-field check before refusing, then refuse once, naming each blocked
-parameter with its cause: a field, custom field, status, watcher, checklist or tag that the role,
+parameter with its cause: a field, custom field, status, watcher or tag that the role,
 tracker, workflow, a setting or a plugin permission does not let this user set, and for a missing
 permission the label to ask for, in the caller's language, as in "is_private (needs Set issues public
 or private)". The refusal
@@ -310,7 +310,8 @@ outside the cross-project subtasks setting is refused by cause, where core would
 is invalid".
 
 `create_issue` and `update_issue` take every field of core's issue form: the standard attributes,
-custom fields, watchers, and with the plugins below checklists and tags. Each parameter maps to one
+custom fields, watchers, and with the plugins below tags; checklist items only through
+`update_issue_checklists`. Each parameter maps to one
 core attribute through one table in `lib/redmine_mcp_plugin/tool.rb`, and `get_issue_fields` reports
 that table filtered by core's `safe_attribute?`, so what it lists is what a write accepts. The core
 safe attributes left out, each for a reason: `project_id` (moving an issue is another act),
@@ -333,11 +334,14 @@ scope.
 Plugins: checklists (redmine_checklists) and tags (redmineup_tags) exist for the agent only while the
 plugin is installed. `Redmine::Plugin.installed?` is read per request, not at boot, because plugins
 load alphabetically and this one boots before redmineup_tags. Without the plugin the
-`update_issue_checklists` tool, the `checklists`, `tag_list`, `add_tag_list` and `remove_tag_list`
+`update_issue_checklists` tool, the `tag_list`, `add_tag_list` and `remove_tag_list`
 parameters and the five plugin scopes are absent from the served list and the advertised scopes.
+`create_issue` takes no checklist items and refuses a `checklists` argument as unknown: offered one,
+the agent turned a description's bullets into items on every issue it created. Items are added with
+`update_issue_checklists`, which the agent is told to use only when the user asks.
 With its own `issue_done_ratio` setting on, redmine_checklists recomputes `done_ratio` from the items
 with a journal-less update on every edit and tick, once the issue has items; `done_ratio` is refused
-then, on create too when `checklists` come with it, and `get_issue_fields` reports it as
+then, and `get_issue_fields` reports it as
 `done_ratio_computed_from`. Closing an issue with open items under `block_issue_closing` fails the
 plugin's own validation, which the tool reports. `update_issue_checklists` sends each item's subject
 with a tick, since the plugin's nested attributes drop an item hash without one, and reads the items

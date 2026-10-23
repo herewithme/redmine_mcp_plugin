@@ -340,8 +340,7 @@ module RedmineMcpPlugin
       'watcher_users'       => %w[watcher_user_ids watcher_users],
       'custom_field_values' => %w[custom_field_values custom_field_values]
     }.freeze
-    PARAMETER_NAMES = WRITE_ATTRIBUTES.to_h { |name, (attribute, _kind)| [attribute, name] }
-                                      .merge('checklists_attributes' => 'checklists').freeze
+    PARAMETER_NAMES = WRITE_ATTRIBUTES.to_h { |name, (attribute, _kind)| [attribute, name] }.freeze
     # "none" clears these; parent handles it on its own path.
     CLEARABLE = %w[date category fixed_version assigned_to].freeze
     TAG_KEYS     = %w[tag_list add_tag_list remove_tag_list].freeze
@@ -364,12 +363,12 @@ module RedmineMcpPlugin
         end
 
         clear  = value == 'none' && CLEARABLE.include?(kind)
-        result = clear ? '' : blocked(problems, name) { issue_value(issue, name, kind, value, arguments) }
+        result = clear ? '' : blocked(problems, name) { issue_value(issue, name, kind, value) }
         attributes[attribute] = result unless result.nil?
       end
     end
 
-    def issue_value(issue, name, kind, value, arguments)
+    def issue_value(issue, name, kind, value)
       case kind
       when 'text'                then value.to_s
       when 'date'                then iso_date(value, name)
@@ -379,7 +378,7 @@ module RedmineMcpPlugin
       when 'fixed_version'       then issue_version_id(issue, value)
       when 'assigned_to'         then assignee_id(issue, value)
       when 'parent'              then parent_attribute(issue, value)
-      when 'done_ratio'          then done_ratio_value(issue, value, arguments['checklists'].present?)
+      when 'done_ratio'          then done_ratio_value(issue, value)
       when 'watcher_users'       then watcher_ids(issue, value, name)
       when 'custom_field_values' then custom_field_values_for(issue, value)
       else value
@@ -524,8 +523,8 @@ module RedmineMcpPlugin
     DONE_RATIO_COMPUTED = { 'status'    => 'computed from the status on this Redmine',
                             'checklist' => 'computed from the checklist by redmine_checklists' }.freeze
 
-    def done_ratio_value(issue, value, adding_checklists)
-      computed = done_ratio_computed_from(issue, adding: adding_checklists)
+    def done_ratio_value(issue, value)
+      computed = done_ratio_computed_from(issue)
       raise ToolError, DONE_RATIO_COMPUTED.fetch(computed) if computed
 
       value
@@ -536,9 +535,9 @@ module RedmineMcpPlugin
     # recomputes it from the items with a journal-less update on every edit and
     # tick (Checklist.recalc_issue_done_ratio, from its edit hook and its
     # controller) once the issue has items, so a value sent now would not last.
-    def done_ratio_computed_from(issue, adding: false)
+    def done_ratio_computed_from(issue)
       return 'status' unless Issue.use_field_for_done_ratio?
-      return 'checklist' if checklist_done_ratio?(issue, adding: adding)
+      return 'checklist' if checklist_done_ratio?(issue)
 
       nil
     end
@@ -723,8 +722,7 @@ module RedmineMcpPlugin
       'estimated_hours' => ->(issue) { issue.estimated_hours&.to_f },
       'is_private'      => ->(issue) { issue.is_private? },
       'watcher_users'   => ->(issue) { issue.watcher_users.map(&:name) },
-      'tag_list'        => ->(issue) { issue.tag_list.to_a },
-      'checklists'      => ->(issue) { issue.checklists.map { |item| { id: item.id, subject: item.subject, is_done: item.is_done } } }
+      'tag_list'        => ->(issue) { issue.tag_list.to_a }
     }.freeze
     STATE_ALIASES = { 'add_watcher_users' => 'watcher_users', 'remove_watcher_users' => 'watcher_users',
                       'add_tag_list' => 'tag_list', 'remove_tag_list' => 'tag_list' }.freeze

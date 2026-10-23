@@ -2,6 +2,7 @@
 
 module RedmineMcpPlugin
   module Tools
+    # Takes no checklist items: offered the parameter, agents filled it on every issue unasked.
     class CreateIssue < Tool
       tool 'create_issue',
            title: 'Create issue',
@@ -10,9 +11,9 @@ module RedmineMcpPlugin
                         'the refused fields: tell the user and ask. End with the url.',
            permission: :add_issues,
            scopes: %i[manage_subtasks add_issue_watchers set_issues_private set_own_issues_private],
-           plugin_scopes: { redmine_checklists: %i[edit_checklists], redmineup_tags: %i[edit_tags create_tags] },
-           plugin_properties: { redmine_checklists: %w[checklists], redmineup_tags: %w[tag_list] },
-           rendered: %w[description checklists],
+           plugin_scopes: { redmineup_tags: %i[edit_tags create_tags] },
+           plugin_properties: { redmineup_tags: %w[tag_list] },
+           rendered: %w[description],
            plain: %w[subject],
            write: true,
            schema: {
@@ -35,7 +36,6 @@ module RedmineMcpPlugin
                'estimated_hours' => { 'type' => 'number' },
                'is_private' => { 'type' => 'boolean' },
                'watcher_users' => { 'type' => 'array', 'description' => 'User or group ids, or "me".' },
-               'checklists' => { 'type' => 'array', 'description' => 'Item subjects.' },
                'tag_list' => { 'type' => 'array', 'description' => 'Tag names.' },
                'custom_field_values' => { 'type' => 'object', 'description' => 'By field id; the value, never the label.' }
              },
@@ -56,10 +56,6 @@ module RedmineMcpPlugin
         # Every per-field check runs; one refusal then names each blocked parameter.
         problems   = []
         attributes = issue_attributes_from(issue, arguments.except('tracker'), problems)
-        if plugin?(:redmine_checklists) && !arguments['checklists'].nil?
-          items = checklist_attributes(issue, arguments['checklists'], problems)
-          attributes['checklists_attributes'] = items if items
-        end
         tags = plugin?(:redmineup_tags) ? tag_attributes(issue, arguments, problems) : {}
         refuse_blocked!(issue, problems)
 
@@ -68,16 +64,6 @@ module RedmineMcpPlugin
         raise ToolError, "Could not create issue: #{issue.errors.full_messages.join('; ')}" unless issue.save
 
         issue_state(stored(issue), arguments)
-      end
-
-      # Items are created with the issue through the plugin's own nested attributes.
-      def checklist_attributes(issue, subjects, problems)
-        unless user.allowed_to?(:edit_checklists, issue.project)
-          problems << "checklists (needs #{permission_labels(:edit_checklists)})"
-          return nil
-        end
-
-        Array(subjects).map(&:to_s).reject(&:blank?).map { |subject| { 'subject' => subject } }
       end
     end
   end

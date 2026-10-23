@@ -6,7 +6,8 @@ module RedmineMcpPlugin
     class UpdateIssueChecklists < Tool
       tool 'update_issue_checklists',
            title: 'Update checklist items',
-           description: 'Add, rename, tick or untick checklist items on an issue. End with the url.',
+           description: 'Add, rename, tick or untick checklist items on an issue, only when the user asks. ' \
+                        'End with the url.',
            plugin: :redmine_checklists,
            permission: %i[done_checklists edit_checklists],
            rendered: %w[add],
