@@ -30,15 +30,14 @@ module RedmineMcpPlugin
 
     module_function
 
-    # The endpoint answering names itself; /mcp when none is given. Every endpoint shares the icon.
-    def server_info(endpoint = Endpoint.main)
-      endpoint.server_info
+    def server_info
+      { name: 'redmine-mcp-plugin', title: 'Redmine', version: RedmineMcpPlugin::VERSION }
     end
 
     # serverInfo for initialize and server/discover. _meta keeps the short form:
     # the icon is kilobytes and would otherwise ride on every result.
-    def implementation(endpoint = Endpoint.main)
-      ICONS ? server_info(endpoint).merge(icons: ICONS) : server_info(endpoint)
+    def implementation
+      ICONS ? server_info.merge(icons: ICONS) : server_info
     end
 
     def capabilities
@@ -63,10 +62,10 @@ module RedmineMcpPlugin
     # Results from 2026-07-28 onwards carry resultType and identify the server
     # in _meta. Older clients ignore both, and the spec instructs them to treat
     # a missing resultType as "complete", so this is safe to send always.
-    def decorate(payload, endpoint = Endpoint.main)
+    def decorate(payload)
       payload.merge(
         resultType: 'complete',
-        _meta: { META_SERVER_INFO_KEY => server_info(endpoint) }
+        _meta: { META_SERVER_INFO_KEY => server_info }
       )
     end
   end

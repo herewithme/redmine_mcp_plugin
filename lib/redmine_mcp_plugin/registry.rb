@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module RedmineMcpPlugin
-  # The set of tools the main /mcp endpoint exposes.
+  # This plugin's own tools; Endpoint.tools appends those other plugins add.
   #
   # Explicit list, not a Dir.glob over the tools directory. A glob means a stray
   # file dropped into plugins/redmine_mcp_plugin/lib/.../tools/ becomes a live,

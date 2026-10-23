@@ -6,16 +6,22 @@ module RedmineMcpPlugin
   # Knows nothing about HTTP. The controller owns authentication, the Origin
   # check and status codes; this owns the protocol methods.
   class Dispatcher
+    INSTRUCTIONS = 'Redmine over MCP. Every tool runs as the authenticated Redmine user and is ' \
+                   'limited by that user\'s project permissions, and by the OAuth2 scopes of the ' \
+                   'presented token where one is used. Results are already filtered; an empty ' \
+                   'result means nothing visible matched, not that nothing exists. After a write, ' \
+                   'report the saved state from the reply, not what was requested, and ask the ' \
+                   'user to check the returned url.'
+
     # 2026-07-28 dropped initialize/notifications/initialized and added
     # server/discover. The older revisions are still what shipped clients speak,
     # so both sets are answered.
-    def initialize(user:, auth:, endpoint: Endpoint.main)
+    def initialize(user:, auth:)
       @user = user
       @auth = auth
-      @endpoint = endpoint
     end
 
-    attr_reader :user, :auth, :endpoint
+    attr_reader :user, :auth
 
     def call(message)
       id     = message['id']
@@ -25,8 +31,8 @@ module RedmineMcpPlugin
       case method
       when 'server/discover'          then JsonRpc.result(id, discover)
       when 'initialize'               then JsonRpc.result(id, initialize_result(params))
-      when 'tools/list'               then JsonRpc.result(id, Protocol.decorate(tools_list, endpoint))
-      when 'tools/call'               then JsonRpc.result(id, Protocol.decorate(tools_call(params), endpoint))
+      when 'tools/list'               then JsonRpc.result(id, Protocol.decorate(tools_list))
+      when 'tools/call'               then JsonRpc.result(id, Protocol.decorate(tools_call(params)))
       when 'ping'                     then JsonRpc.result(id, {})
       else
         JsonRpc.error(id, JsonRpc::METHOD_NOT_FOUND, "Method not found: #{method}")
@@ -44,7 +50,7 @@ module RedmineMcpPlugin
     rescue ToolError => e
       # Actionable: surfaced as a tool execution error so the model can correct
       # itself, per the specification's two-tier error model.
-      JsonRpc.result(message['id'], Protocol.decorate(tool_error(e.message), endpoint))
+      JsonRpc.result(message['id'], Protocol.decorate(tool_error(e.message)))
     rescue StandardError => e
       Rails.logger.error("[redmine_mcp_plugin] #{e.class}: #{e.message}\n#{e.backtrace&.first(15)&.join("\n")}")
       # Deliberately does not echo e.message: an exception from deep in Rails
@@ -58,12 +64,9 @@ module RedmineMcpPlugin
     # protocol versions, capabilities and identity.
     def discover
       Protocol.decorate(
-        {
-          protocolVersions: RedmineMcpPlugin::SUPPORTED_PROTOCOL_VERSIONS,
-          capabilities: Protocol.capabilities,
-          serverInfo: Protocol.implementation(endpoint)
-        },
-        endpoint
+        protocolVersions: RedmineMcpPlugin::SUPPORTED_PROTOCOL_VERSIONS,
+        capabilities: Protocol.capabilities,
+        serverInfo: Protocol.implementation
       )
     end
 
@@ -73,15 +76,15 @@ module RedmineMcpPlugin
       {
         protocolVersion: Protocol.negotiate_initialize(requested),
         capabilities: Protocol.capabilities,
-        serverInfo: Protocol.implementation(endpoint),
+        serverInfo: Protocol.implementation,
         # The formatting guide follows the setting, so it is built per call.
-        instructions: "#{endpoint.instructions} #{Formatting.guide(endpoint.hints[:fields])}"
+        instructions: "#{INSTRUCTIONS} #{Formatting.guide}"
       }
     end
 
     def tools_list
       {
-        tools: endpoint.visible_to(user).map(&:descriptor),
+        tools: Endpoint.visible_to(user).map(&:descriptor),
         # ttlMs and cacheScope are required on list results from 2026-07-28.
         # 'private' because the tool set varies per caller -- a shared cache
         # would serve one user's tool list to another.
@@ -92,9 +95,9 @@ module RedmineMcpPlugin
 
     def tools_call(params)
       name = params['name'].to_s
-      tool_class = endpoint.find(name, user)
+      tool_class = Endpoint.find(name, user)
 
-      # endpoint.find already filters by permission, so an unavailable tool and
+      # Endpoint.find already filters by permission, so an unavailable tool and
       # an unknown tool are indistinguishable here -- deliberately. Saying
       # "exists but forbidden" tells a caller what the server can do for someone
       # else. Both therefore leave as PermissionError and become -32602, which
@@ -105,7 +108,7 @@ module RedmineMcpPlugin
       arguments = {} if arguments.blank?
       raise ToolError, 'arguments must be an object' unless arguments.is_a?(Hash)
 
-      payload = tool_class.new(user, auth, endpoint).call(arguments.to_h)
+      payload = tool_class.new(user, auth).call(arguments.to_h)
 
       {
         content: [{ type: 'text', text: JSON.pretty_generate(payload) }],

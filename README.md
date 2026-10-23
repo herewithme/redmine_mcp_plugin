@@ -102,6 +102,7 @@ ever carry it.
 
 Adding a tool with a new permission changes the advertised set, and every user reconnects to get a
 token that carries it. The application only needs editing if it did not already enable the scope.
+An extension adds the permissions of its tools in the same way; see Extensions.
 
 ## Local patches
 
@@ -114,9 +115,10 @@ discovery documents. Upstream advertised every scope Doorkeeper knows - every Re
 plus `admin`, ~200 in all. Claude requests exactly what `scopes_supported` lists, so consent either
 failed with `invalid_scope` or granted far more than the tools use.
 
-Ours advertises the permissions the registered tools declare (`mcp_permissions`) and the ones they
-check at runtime (`scopes`), dropping the write tools while the server is read-only and the tools
-and scopes of plugins that are not installed, intersected with what Doorkeeper will accept.
+Ours advertises the permissions the tools on `/mcp` declare (`mcp_permissions`) and the ones they
+check at runtime (`scopes`), an extension's tools included, dropping the write tools while the server
+is read-only and the tools and scopes of plugins that are not installed, intersected with what
+Doorkeeper will accept.
 Read-only gives `view_project`, `view_issues`, `view_issue_watchers`, `view_wiki_pages`,
 `view_time_entries` and `view_news`; with writes on, add `add_issues`, `add_issue_notes`,
 `edit_issues`, `edit_own_issues`, `edit_own_issue_notes`, `log_time`, `set_notes_private`,
@@ -397,99 +399,79 @@ it gets:
 So an unauthenticated `GET /mcp` returns 401, not 405. That is the intended behaviour: the endpoint
 does not describe itself to anonymous callers beyond pointing them at the discovery documents.
 
-## Additional endpoints
+## Extensions
 
-Another Redmine plugin can mount a separate MCP server under `/mcp/<path>`. That server has its own
-URL, its own tools, its own scopes and its own claude.ai connector. Nothing about that plugin's domain
-lives here. The plugin registers the endpoint from its `init.rb`:
+Another Redmine plugin can add tools to `/mcp`. They are served with this plugin's own: the same URL,
+OAuth application and claude.ai connector, listed per user in the same way, and their permissions join
+the advertised scopes. Nothing about that plugin's domain lives here. The plugin adds its tools from its
+`init.rb`:
 
 ```ruby
-# defined? rather than requires_redmine_plugin, which depends on load order; without this plugin the
-# extension then simply mounts nothing instead of stopping Redmine booting.
-if defined?(RedmineMcpPlugin::Endpoint)
-  begin
-    RedmineMcpPlugin::Endpoint.register(
-      'invoices',                                      # served at /mcp/invoices
-      name:         'redmine-mcp-plugin-invoices',     # serverInfo.name
-      title:        'Redmine Invoices',                # serverInfo.title and the resource_name
-      version:      RedmineMcpPluginInvoices::VERSION, # optional, defaults to this plugin's
-      instructions: 'Client offers in Redmine, from the RedmineUP invoices plugin. ...',
-      hints:        { users: 'get_invoice_fields', fields: 'get_invoice_fields' }, # optional, see below
-      tools: [RedmineMcpPluginInvoices::Tools::ListInvoices, RedmineMcpPluginInvoices::Tools::GetInvoiceFields]
-    )
-  rescue StandardError => e # an older redmine_mcp_plugin refuses hints: as an unknown keyword
-    Rails.logger.error("/mcp/invoices is not served: #{e.class}: #{e.message}")
+# Without redmine_mcp_plugin, or with one older than add_tools, the tools are neither loaded nor served.
+mcp = defined?(RedmineMcpPlugin::Endpoint) && RedmineMcpPlugin::Endpoint.respond_to?(:add_tools)
+unless mcp
+  Rails.autoloaders.main.ignore(File.join(__dir__, 'lib', 'redmine_mcp_plugin_invoices'))
+  Rails.logger.error('[redmine_mcp_plugin_invoices] not served: redmine_mcp_plugin is absent or too old')
+end
+
+Redmine::Plugin.register :redmine_mcp_plugin_invoices do
+  # ...
+end
+
+if mcp
+  RedmineMcpPlugin::Endpoint.add_tools(:redmine_mcp_plugin_invoices) do
+    next [] unless Redmine::Plugin.installed?(:redmine_contacts_invoices)
+
+    [RedmineMcpPluginInvoices::Tools::ListInvoices, RedmineMcpPluginInvoices::Tools::GetInvoice]
   end
 end
 ```
 
-The list of tools is explicit, as `Registry` is for `/mcp`. Each entry is a `RedmineMcpPlugin::Tool`
-subclass, and core tools such as `RedmineMcpPlugin::Tools::WhoAmI` may be listed too. Plugins may load
-in any order. The routes are drawn once, here, and each request is checked against the registered
-paths. A path nobody registered stays a 404.
+The first argument names the extension in log lines. The block returns its tools, each a
+`RedmineMcpPlugin::Tool` subclass; an empty list adds nothing. It is called once, after every plugin has
+loaded, so plugins may load in any order and the classes and permissions it names exist by then. The
+tools follow this plugin's in `tools/list`. Each tool's `permission` and `scopes` are the extension's
+OAuth scopes, advertised as this plugin's are; there is no separate list.
 
-`hints` names which of the endpoint's own tools the shared messages point to: `users` for a user id
-(the refusal of a wrong one, and the user filters in `describe`), `projects` for the project filters in
-`describe`, `fields` for the custom fields that render, in the formatting guide. A kind left out names
-no tool. `/mcp` points to `list_users`, `list_projects` and `get_issue_fields`. A core tool listed by an
-extension keeps its own description, which may name other core tools.
+An extension never stops Redmine or `/mcp`. Each of these is logged at boot, and that extension's tools
+are left out while `/mcp` serves everything else:
 
-An extension never stops Redmine booting. A bad path, a blank name, title or instructions, a class that
-is not a `Tool`, a duplicate tool name, a path another plugin already took, an unknown hint, or a hint
-naming a tool the endpoint does not list, is logged as an error and that endpoint is not served:
-`/mcp/<path>` answers 404, and `/mcp` and Redmine run on. An unknown or missing keyword raises in the
-extension's own `init.rb`, before the call reaches this plugin, so the extension guards its own call,
-as above.
+- the block is missing, raises (a misspelt class, say), or returns anything but a list of `Tool`
+  subclasses;
+- a tool name that this plugin or an earlier extension already serves, or that the list repeats;
+- a `permission` or `scopes` entry that is not a Redmine permission, for a tool whose plugin is installed.
 
-What an extension endpoint inherits:
+For example: `[redmine_mcp_plugin] redmine_mcp_plugin_invoices adds no tools to /mcp: ArgumentError: tool
+name list_users is taken`. Extensions are added in the order Redmine loads plugins, which is
+alphabetical, so the first to take a name keeps it. A syntax error in an extension's `lib/` still stops
+Redmine, as in any plugin, because Redmine eager-loads every plugin's `lib/`.
 
-- **Settings.** It obeys the enabled switch: off closes every endpoint and every discovery document.
-  It also obeys the authentication modes, the REST API gate, read-only mode, the allowed origins and
-  `max_results`. It has no switch of its own.
-- **Request handling.** Authentication, the Origin and protocol-version checks, the JSON-RPC handling
-  and the status codes all come from here.
-- **Tool behaviour.** It gets the `Tool` base: the permission check through `User#allowed_to?`, the
-  read-only refusal, schema validation and coercion, and the helpers. Every refusal is worded as here.
-- **Text.** The formatting guide is appended to its instructions, naming its `fields` tool, and the
-  parameter suffixes come with it.
-- **Doorkeeper.** It shares Doorkeeper and the authorization-server document, and the icon.
+An extension's tools share everything else with this plugin's:
 
-Its tools/list and advertised scopes come from its own tools, computed the same way as `/mcp`'s and
-respecting read-only mode.
+- **Settings.** The enabled switch, the authentication modes, the REST API gate, read-only mode, the
+  allowed origins and `max_results`.
+- **Request handling.** Authentication, the Origin and protocol-version checks, the JSON-RPC handling and
+  the status codes.
+- **Tool behaviour.** The `Tool` base: the permission check through `User#allowed_to?`, the read-only
+  refusal, schema validation and coercion, the helpers, and the wording of every refusal.
+- **Text.** The formatting guide and the parameter suffixes. User ids, project ids and the custom fields
+  that render point to `list_users`, `list_projects` and `get_issue_fields`.
+- **Discovery.** Doorkeeper, both discovery documents and the icon.
 
-Every extension tool should declare a permission. Tokens are not bound to an endpoint: a token issued
-to one connector is accepted by the other. It then sees only the tools whose permission both its
-scopes and the user's roles grant. A tool with no permission is open to any token the endpoint
-accepts.
+Every extension tool should declare a permission: a tool without one is listed to every user of `/mcp`.
 
-URLs an extension endpoint at `/mcp/<path>` uses:
+What an administrator does:
 
-```
-POST   /mcp/<path>                                         MCP; GET and DELETE answer 405, as on /mcp
-GET    /.well-known/oauth-protected-resource/mcp/<path>    its RFC 9728 document; resource is .../mcp/<path>
-GET    /.well-known/oauth-authorization-server             shared
-GET    /oauth/authorize, POST /oauth/token                 shared, Redmine's Doorkeeper
-```
+1. **Install and restart,** as in Deployment.
+2. **Enable the new scopes** on the existing MCP application: the ones
+   `/.well-known/oauth-protected-resource` now lists. Until then a new connection fails with
+   `invalid_scope`, because the client requests exactly that list. When the permissions come from a
+   plugin that is already installed, they can be enabled before the restart.
+3. **Grant the permissions** to the roles of the people who should use the tools.
+4. **Reconnect.** A token keeps the scopes it was issued with, so each user reconnects the connector to
+   see the new tools.
 
-A 401 from `/mcp/<path>` points at its own resource document. The root
-`/.well-known/oauth-protected-resource` keeps describing `/mcp`.
-
-What an administrator configures:
-
-1. **Install and restart.** Install the plugin and restart, as in Deployment.
-2. **Create the OAuth Application.** Use one per connector: never share `/mcp`'s.
-   - Create it under Administration → Applications, with redirect URI
-     `https://claude.ai/api/mcp/auth_callback`.
-   - Enable at least the scopes that `/.well-known/oauth-protected-resource/mcp/<path>` lists.
-   - A separate Application caps each connector at its own scopes, so a token from the `/mcp`
-     connector can never carry the extension's scopes.
-   - Each can be revoked and its secret rotated without touching the other.
-3. **Grant the permissions.** Give the extension's permissions to the roles of the people who should
-   use it.
-4. **Add the connector in claude.ai.** Use URL `https://<host>/mcp/<path>` and that Application's
-   client id and secret.
-5. **Open the firewall.** `/mcp/<path>` must be allowed from Anthropic's range. A rule written as a
-   prefix on `/mcp` covers it; a rule matching `/mcp` exactly does not.
+The URL, the connector and the firewall rule stay as they are.
 
 ## Client configuration
 

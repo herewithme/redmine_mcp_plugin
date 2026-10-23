@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
-# The MCP endpoint, and any that another plugin registers under it. One path each, POST/GET/DELETE, per
-# the Streamable HTTP transport.
+# The MCP endpoint. One path, POST/GET/DELETE, per the Streamable HTTP transport.
 #
 # Everything security-relevant happens here or in Authenticator; the Dispatcher
 # below is pure protocol.
@@ -68,7 +67,7 @@ class McpController < ApplicationController
       return head :accepted
     end
 
-    dispatcher = RedmineMcpPlugin::Dispatcher.new(user: User.current, auth: @mcp_auth, endpoint: current_endpoint)
+    dispatcher = RedmineMcpPlugin::Dispatcher.new(user: User.current, auth: @mcp_auth)
     render_rpc(dispatcher.call(message), :ok)
   end
 
@@ -147,13 +146,7 @@ class McpController < ApplicationController
 
   def oauth_protected_resource_url
     base = request.base_url + (Redmine::Utils.relative_url_root.presence || '')
-    "#{base}/.well-known/oauth-protected-resource#{current_endpoint.mount_path}"
-  end
-
-  # Read from the path, never params, so a query string cannot pick the endpoint. The routes admit
-  # only registered paths.
-  def current_endpoint
-    @current_endpoint ||= RedmineMcpPlugin::Endpoint.find(request.path_parameters[:endpoint])
+    "#{base}/.well-known/oauth-protected-resource/mcp"
   end
 
   def render_rpc(payload, status)

@@ -127,10 +127,9 @@ module RedmineMcpPlugin
     # `attr_writer :oauth_scope` on User with no matching reader, so the granted
     # scopes cannot be read back off the model once set -- the plugin has to
     # remember them itself.
-    def initialize(user, auth = {}, endpoint = Endpoint.main)
-      @user     = user
-      @auth     = auth || {}
-      @endpoint = endpoint
+    def initialize(user, auth = {})
+      @user = user
+      @auth = auth || {}
     end
 
     attr_reader :user, :auth
@@ -170,9 +169,6 @@ module RedmineMcpPlugin
     end
 
     def plugin?(id) = self.class.plugin?(id)
-
-    # The endpoint's own tool for users, projects or fields; nil when it has none.
-    def hint(kind) = @endpoint.hints[kind]
 
     # --- helpers available to every tool ----------------------------------
 
@@ -295,7 +291,7 @@ module RedmineMcpPlugin
     def user_ref!(value, name)
       return value if value == 'me' || SchemaValidator.integerish?(value)
 
-      raise InvalidArgument, "#{name} must be a user id#{" from #{hint(:users)}" if hint(:users)}, or \"me\""
+      raise InvalidArgument, "#{name} must be a user id from list_users, or \"me\""
     end
 
     def user_id_from(value, name)

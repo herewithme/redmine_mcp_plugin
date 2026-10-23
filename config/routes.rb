@@ -17,13 +17,4 @@ RedmineApp::Application.routes.draw do
   get '.well-known/oauth-protected-resource'     => 'mcp_metadata#protected_resource'
   get '.well-known/oauth-protected-resource/mcp' => 'mcp_metadata#protected_resource'
   get '.well-known/oauth-authorization-server'   => 'mcp_metadata#authorization_server'
-
-  # Endpoints another plugin registers. Checked per request, so registration order does not matter and
-  # a path nobody registered stays a routing 404.
-  constraints(->(request) { RedmineMcpPlugin::Endpoint.extension?(request.path_parameters[:endpoint]) }) do
-    post   'mcp/:endpoint' => 'mcp#handle'
-    get    'mcp/:endpoint' => 'mcp#stream'
-    delete 'mcp/:endpoint' => 'mcp#terminate'
-    get    '.well-known/oauth-protected-resource/mcp/:endpoint' => 'mcp_metadata#protected_resource'
-  end
 end
