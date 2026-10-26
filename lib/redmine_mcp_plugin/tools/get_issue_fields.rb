@@ -19,7 +19,8 @@ module RedmineMcpPlugin
                'project' => { 'type' => %w[string integer],
                               'description' => 'Project identifier or numeric id, for an issue not yet created.' },
                'tracker' => { 'type' => 'string',
-                              'description' => 'Tracker name. Defaults to the first tracker the user may create in.' }
+                              'description' => 'Tracker name. With issue, the tracker it would move to; otherwise ' \
+                                               'defaults to the first the user may create in.' }
              },
              'additionalProperties' => false
            }
@@ -73,12 +74,23 @@ module RedmineMcpPlugin
         if arguments['issue'].present?
           issue = fetch_issue(arguments['issue'])
           authorize!(:view_issues, issue.project)
+          move_to_tracker(issue, arguments['tracker']) if arguments['tracker'].present?
           issue
         elsif arguments['project'].present?
           new_issue(arguments)
         else
           raise ToolError, 'Pass issue for an existing issue, or project for one not yet created'
         end
+      end
+
+      # Core's edit form after a tracker change, in memory and never saved: the status, custom fields
+      # and workflow rules follow the tracker. Refused as update_issue refuses the move.
+      def move_to_tracker(issue, name)
+        return if name == issue.tracker&.name
+
+        problems = []
+        change_tracker!(issue, name, problems)
+        refuse_blocked!(issue, problems)
       end
 
       def new_issue(arguments)

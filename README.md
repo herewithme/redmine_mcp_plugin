@@ -260,7 +260,7 @@ while read-only mode is on, which is the default.
 |---|---|
 | `whoami` | none. Reports identity, auth mode and granted scopes |
 | `list_projects`, `get_project` | `view_project` |
-| `search_issues`, `get_issue` | `view_issues`. `get_issue` adds the attachments, the relations whose other issue the caller can see, the watchers under `view_issue_watchers`, the checklist under `view_checklists`, and the tags |
+| `search_issues`, `get_issue` | `view_issues`. `get_issue` adds the attachments, the subtasks the caller can see, the relations whose other issue the caller can see, the watchers under `view_issue_watchers`, the checklist under `view_checklists`, and the tags |
 | `get_attachment` | `view_issues`, through core's `Attachment#visible?`. Metadata, and the content of a text file within `file_max_size_displayed` |
 | `list_queries` | `view_issues`. Saved queries, filtered by `IssueQuery.visible` |
 | `list_wiki_pages`, `get_wiki_page` | `view_wiki_pages` |
@@ -268,7 +268,7 @@ while read-only mode is on, which is the default.
 | `list_enumerations` | none. Trackers, statuses, priorities, time entry activities |
 | `list_users` | none. Filtered by `Principal.visible` |
 | `list_time_entries` | `view_time_entries`. Totals, per-group hours and each entry's custom fields, filtered by `TimeEntry.visible` |
-| `get_issue_fields` | `view_issues`. What the caller may set on an issue, before a write |
+| `get_issue_fields` | `view_issues`. What the caller may set on an issue, before a write; with `issue` and `tracker`, what it would be under that tracker, refused as `update_issue` refuses the move |
 | `create_issue` (write) | `add_issues`, on the requested tracker, plus `manage_subtasks` for `parent`, `add_issue_watchers` for `watcher_users`, `set_issues_private` or `set_own_issues_private` for `is_private`, `edit_tags` for `tag_list` and `create_tags` for a tag that does not exist yet |
 | `update_issue` (write) | `edit_issues`, or `edit_own_issues` on one's own issue, on the issue's tracker, plus the per-field permissions of `create_issue` and `delete_issue_watchers` for `remove_watcher_users`. Watching or unwatching oneself needs none, as core's Watch link |
 | `add_issue_note` (write) | `add_issue_notes`, on the issue's tracker, plus `set_notes_private` for private notes |
@@ -281,6 +281,10 @@ while read-only mode is on, which is the default.
 | `update_news` (write) | `manage_news`. Editing sends no email |
 
 `get_issue` respects per-field custom field visibility and filters private notes by role, as above.
+Its history reads as the issue page's: a custom field by its name, a reference without `_id` (`status`,
+`assigned_to`, `parent`, `child`), a checklist change as the items added, removed, done, undone and
+renamed, shown only under `view_checklists` as the plugin's own history does, and no journal with
+neither notes nor a detail the caller may see.
 `list_users` uses `Principal.visible` rather than `User.all`, which honours each role's
 `users_visibility` setting.
 
