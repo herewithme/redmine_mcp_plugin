@@ -37,7 +37,9 @@ module RedmineMcpPlugin
                'is_private' => { 'type' => 'boolean' },
                'watcher_users' => { 'type' => 'array', 'description' => 'User or group ids, or "me".' },
                'tag_list' => { 'type' => 'array', 'description' => 'Tag names.' },
-               'custom_field_values' => { 'type' => 'object', 'description' => 'By field id; the value, never the label.' }
+               'custom_field_values' => { 'type' => 'object',
+                                         'description' => 'By field id from get_issue_fields; a value, or its label ' \
+                                                          'when it names one value.' }
              },
              'required' => %w[project subject],
              'additionalProperties' => false
@@ -57,6 +59,7 @@ module RedmineMcpPlugin
         problems   = []
         attributes = issue_attributes_from(issue, arguments.except('tracker'), problems)
         tags = plugin?(:redmineup_tags) ? tag_attributes(issue, arguments, problems) : {}
+        require_issue_custom_fields!(issue, attributes, problems)
         refuse_blocked!(issue, problems)
 
         # Indifferent access: the tags plugin reads its keys as symbols.

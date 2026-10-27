@@ -269,7 +269,7 @@ while read-only mode is on, which is the default.
 | `list_queries` | `view_issues`. Saved queries, filtered by `IssueQuery.visible` |
 | `list_wiki_pages`, `get_wiki_page` | `view_wiki_pages` |
 | `list_news`, `get_news` | `view_news`. Filtered by `News.visible`; with a project, that project's own news, as core's index |
-| `list_enumerations` | none. Trackers, statuses, priorities, time entry activities |
+| `list_enumerations` | none. Trackers, statuses, priorities, time entry activities; with `project`, that project's activities and, for a caller with `log_time` there, the time entry custom fields with their required flag and allowed values |
 | `list_users` | none. Filtered by `Principal.visible` |
 | `list_time_entries` | `view_time_entries`. Totals, per-group hours and each entry's custom fields, filtered by `TimeEntry.visible` |
 | `get_issue_fields` | `view_issues`. What the caller may set on an issue, before a write; with `issue` and `tracker`, what it would be under that tracker, refused as `update_issue` refuses the move |
@@ -314,10 +314,24 @@ tracker, workflow, a setting or a plugin permission does not let this user set, 
 permission the label to ask for, in the caller's language, as in "is_private (needs Set issues public
 or private)". The refusal
 stays the uniform "You do not have permission to do that" when the caller may not use the tool or
-edit the issue at all. `log_time` refuses custom fields by name as before. These are
+edit the issue at all. These are
 the things core would drop silently and save the rest. A `parent` that is invisible, circular, or
 outside the cross-project subtasks setting is refused by cause, where core would say only "Parent task
 is invalid".
+
+Custom field values are checked before the save, on `create_issue`, `update_issue` and `log_time`
+alike, so a wrong one costs one refusal that teaches the fix rather than core's bare "is not included
+in the list" or "cannot be blank". A field the caller may not set is refused by name. For a format
+with a list of values (list, key/value list, user, version, bool), a value is the stored one (the
+option, the id, `1` or `0`); a label that names exactly one value is accepted in its place, case
+aside, as are `"me"` for a user field and `true`/`false` for a bool, and the value already stored
+stays accepted, as core keeps it. Anything else is refused with the field's name, its id and up to
+25 accepted values with their labels. A required field left blank is refused the same way, with its
+choices: on a new issue or time entry every required field is checked, as core validates them all;
+on an update, only once a custom field is sent, since core revalidates them only then. Required
+means the field's own flag or, on an issue, a workflow rule for this user on this tracker. The
+choices come from the same core call as `get_issue_fields` and `list_enumerations` report, so the
+refusal and the listing never disagree.
 
 `create_issue` and `update_issue` take every field of core's issue form: the standard attributes,
 custom fields, watchers, and with the plugins below tags; checklist items only through

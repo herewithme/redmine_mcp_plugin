@@ -578,12 +578,45 @@ module RedmineMcpPlugin
       I18n.t(setting.present? ? "label_cross_project_#{setting}" : :label_disabled, locale: caller_locale)
     end
 
-    # Same reason: core keeps only the custom fields this user may edit here.
-    def refuse_unknown_custom_fields!(record, ids)
-      list = unknown_custom_fields(record, ids)
-      raise ToolError, "Custom fields #{list} cannot be set on this #{record.class.model_name.human.downcase}" if list
+    # --- custom fields ------------------------------------------------------
+
+    # Choices named in a refusal, capped so a user field on a big instance stays readable.
+    MAX_CHOICES = 25
+
+    # The custom fields this user may set on `record`, each with its allowed
+    # values, in one shape for issues and time entries. `required_ids` adds the
+    # fields a workflow rule requires here beyond the definition flag.
+    def custom_field_rows(record, required_ids = [])
+      record.editable_custom_field_values(user).map do |value|
+        field = value.custom_field
+        {
+          id: field.id,
+          name: field.name,
+          format: field.field_format,
+          required: custom_field_required?(field, required_ids),
+          multiple: field.multiple?,
+          # True for a long text field with text formatting on: its value takes markup.
+          rendered: field.full_text_formatting?,
+          default_value: field.default_value,
+          possible_values: possible_values_for(field, record)
+        }
+      end
     end
 
+    def custom_field_required?(field, required_ids)
+      field.is_required? || required_ids.include?(field.id.to_s)
+    end
+
+    # Core gives plain strings for a list field, and [label, value] pairs for
+    # the formats stored as ids and for bool. Empty for a free-form format.
+    def possible_values_for(field, record)
+      field.possible_values_options(record).map do |option|
+        label, value = option.is_a?(Array) ? option : [option, option]
+        { value: value.to_s, label: label.to_s }
+      end
+    end
+
+    # Same reason as the attributes: core keeps only the custom fields this user may edit here.
     def unknown_custom_fields(record, ids)
       editable = record.editable_custom_field_values(user).map { |value| value.custom_field_id.to_s }
       unknown  = Array(ids).map(&:to_s) - editable
@@ -593,14 +626,90 @@ module RedmineMcpPlugin
       unknown.map { |id| names[id.to_i] || "id #{id}" }.join(', ')
     end
 
-    def custom_field_values_for(issue, raw)
+    # The values to assign, by field id: refused by name when the field cannot
+    # be set here, and checked against the field's allowed values before the
+    # save, so a wrong one is refused with the choices instead of core's "is
+    # not included in the list". A label is accepted when it names one value.
+    def custom_field_values_for(record, raw)
       values = custom_field_values_from(raw)
       return nil if values.nil?
 
-      list = unknown_custom_fields(issue, values.keys)
+      list = unknown_custom_fields(record, values.keys)
       raise ToolError, "#{list} cannot be set here" if list
 
-      values
+      values.to_h do |id, value|
+        field   = record.custom_field_values.detect { |v| v.custom_field_id.to_s == id }.custom_field
+        options = possible_values_for(field, record)
+        next [id, value] if options.empty?
+
+        # Core still accepts the value already stored, though no longer offered.
+        kept     = Array(record.custom_field_value(field)).map(&:to_s)
+        resolved = Array(value).map { |one| kept.include?(one) ? one : resolve_custom_value(field, options, one) }
+        [id, value.is_a?(Array) ? resolved : resolved.first]
+      end
+    end
+
+    def resolve_custom_value(field, options, value)
+      value = value.to_s
+      return value if value.blank?
+
+      value = user.id.to_s if field.field_format == 'user' && value == 'me'
+      value = { 'true' => '1', 'false' => '0' }.fetch(value.downcase, value) if field.field_format == 'bool'
+      return value if options.any? { |option| option[:value] == value }
+
+      matches = options.select { |option| option[:label].casecmp?(value) }.map { |option| option[:value] }.uniq
+      return matches.first if matches.size == 1
+      if matches.size > 1
+        raise ToolError, "#{custom_field_label(field)}: #{value.inspect} names several values, pass one: #{matches.join(', ')}"
+      end
+
+      raise ToolError, "#{custom_field_label(field)} has no value #{value.inspect}; accepts #{choices_text(options)}"
+    end
+
+    # The required custom fields a save would refuse blank, named with their
+    # choices before core's bare "cannot be blank". Core validates every custom
+    # field of a new record, and of a stored one only once a custom field
+    # changes, so an update that sends none is left to core.
+    def require_custom_fields!(record, values, required_ids = [])
+      values = values.to_h
+      return if record.persisted? && values.empty?
+
+      missing = record.editable_custom_field_values(user).select do |current|
+        field = current.custom_field
+        custom_field_required?(field, required_ids) && Array(values.fetch(field.id.to_s) { current.value }).all?(&:blank?)
+      end
+      return if missing.empty?
+
+      raise ToolError, missing.map { |current| required_text(current.custom_field, record) }.join('; ')
+    end
+
+    # Charged to custom_field_values with the other refusals, unless a value
+    # sent there was refused already: that refusal names the field.
+    def require_issue_custom_fields!(issue, attributes, problems)
+      return if problems.any? { |problem| problem.start_with?('custom_field_values ') }
+
+      blocked(problems, 'custom_field_values') do
+        require_custom_fields!(issue, attributes['custom_field_values'], issue.required_attribute_names(user))
+      end
+    end
+
+    def required_text(field, record)
+      options = possible_values_for(field, record)
+      text    = "#{custom_field_label(field)} is required"
+      options.empty? ? text : "#{text}; accepts #{choices_text(options)}"
+    end
+
+    def custom_field_label(field)
+      "custom field #{field.name} (id #{field.id})"
+    end
+
+    # A list field repeats its value as the label; the other formats show both.
+    def choices_text(options)
+      shown = options.first(MAX_CHOICES).map do |option|
+        option[:value] == option[:label] ? option[:value].inspect : "#{option[:value]} (#{option[:label]})"
+      end
+      text = shown.join(', ')
+      options.size > MAX_CHOICES ? "#{text}, and #{options.size - MAX_CHOICES} more" : text
     end
 
     # --- watchers -----------------------------------------------------------
