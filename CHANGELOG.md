@@ -5,6 +5,16 @@ All notable changes to this fork. The format follows
 [Semantic Versioning](https://semver.org/). The version is `RedmineMcpPlugin::VERSION`: Redmine's
 plugin list shows it, and MCP clients read it as `serverInfo.version`.
 
+## [0.2.1] - 2026-10-27
+
+### Fixed
+
+- Clicking Authorize on the OAuth2 consent screen with sudo mode on returned a 500
+  (`No route matches {:action=>"create", :controller=>"authorizations"}`), so nobody whose sudo
+  mode had expired could connect an MCP client. The Doorkeeper URL fix stripped `doorkeeper/` from
+  the recalled controller, which broke the sudo password form's `form_tag({})`. It now makes
+  relative controllers absolute instead, and leaves the recall alone.
+
 ## [0.2.0] - 2026-10-27
 
 First version of the herewithme fork. Checked on Redmine 6.1.2 (Rails 7.2.3) and Redmine 7.0.2
@@ -48,5 +58,6 @@ The version declared by
 unchanged, by [stenikgroup/redmine_mcp_plugin](https://github.com/stenikgroup/redmine_mcp_plugin)
 through all of its work. This fork starts from stenikgroup's last commit, `19ce030`.
 
+[0.2.1]: https://github.com/herewithme/redmine_mcp_plugin/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/herewithme/redmine_mcp_plugin/compare/19ce030...v0.2.0
 [0.1.0]: https://github.com/stenikgroup/redmine_mcp_plugin/tree/19ce030

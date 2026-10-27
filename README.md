@@ -4,7 +4,7 @@ A [Model Context Protocol](https://modelcontextprotocol.io) server that runs ins
 plugin. It adds one endpoint, `POST /mcp`, and authenticates it with Redmine's own mechanisms. Every
 tool runs as a real Redmine user and is limited by that user's permissions.
 
-Version 0.2.0. Read-only by default. See [CHANGELOG.md](CHANGELOG.md).
+Version 0.2.1. Read-only by default. See [CHANGELOG.md](CHANGELOG.md).
 
 ## A fork of a fork
 
@@ -167,13 +167,20 @@ which inside Doorkeeper is `doorkeeper/authorizations`, so every such reference 
 `doorkeeper/<name>` and raises `UrlGenerationError` - a 500 on the OAuth2 consent screen of any
 install whose layout links to a user, which includes ours.
 
-`lib/redmine_mcp_plugin/doorkeeper_url_options.rb` strips the `doorkeeper/` prefix from the recalled
-controller in the three Doorkeeper controllers, and `init.rb` applies it in `after_initialize`.
+`lib/redmine_mcp_plugin/doorkeeper_url_options.rb` makes a relative controller absolute in every
+URL the three Doorkeeper controllers and their views build, as core's menus already do with
+`use_absolute_controller`, and `init.rb` applies it in `after_initialize`. The recalled controller
+itself is left alone: URLs built from it alone, such as the sudo mode password form's
+`form_tag({})`, must still point at the Doorkeeper route. An earlier version stripped the
+`doorkeeper/` prefix from the recall instead, and clicking Authorize with sudo mode on returned a
+500 (`No route matches {:action=>"create", :controller=>"authorizations"}`).
+
 The timing matters: plugin `init.rb` files run in a `to_prepare` block registered before the one in
 which Redmine configures Doorkeeper, and touching a Doorkeeper controller before that configuration
-binds it to `ActionController::Base` for the life of the process. The module is prepended, so an
-install that still carries the older patch of `config/initializers/30-redmine.rb` keeps working;
-that patch can be removed at the next restart.
+binds it to `ActionController::Base` for the life of the process. The module is prepended, and puts
+back the recalled controller that the older patch of `config/initializers/30-redmine.rb` strips, so
+an install that still carries that patch keeps working; the patch can be removed at the next
+restart.
 
 ## Authentication
 
