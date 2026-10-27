@@ -667,30 +667,31 @@ module RedmineMcpPlugin
     end
 
     # The required custom fields a save would refuse blank, named with their
-    # choices before core's bare "cannot be blank". Core validates every custom
-    # field of a new record, and of a stored one only once a custom field
-    # changes, so an update that sends none is left to core.
-    def require_custom_fields!(record, values, required_ids = [])
-      values = values.to_h
-      return if record.persisted? && values.empty?
-
+    # choices before core's bare "cannot be blank". Runs once the attributes
+    # are assigned and before the save, since core reads the workflow rules of
+    # the status being set, not the stored one. Core checks a field a workflow
+    # requires at every save; a field required by its own flag on a new record,
+    # and on a stored one once a custom field changes, which a tracker move
+    # counts as. An update that changes none of that is left to core, as core
+    # leaves it alone too.
+    def require_custom_fields!(record, required_ids = [])
+      changed = record.new_record? || record.custom_field_values_changed?
       missing = record.editable_custom_field_values(user).select do |current|
         field = current.custom_field
-        custom_field_required?(field, required_ids) && Array(values.fetch(field.id.to_s) { current.value }).all?(&:blank?)
+        next false unless Array(current.value).all?(&:blank?)
+
+        required_ids.include?(field.id.to_s) || (changed && field.is_required?)
       end
       return if missing.empty?
 
       raise ToolError, missing.map { |current| required_text(current.custom_field, record) }.join('; ')
     end
 
-    # Charged to custom_field_values with the other refusals, unless a value
-    # sent there was refused already: that refusal names the field.
-    def require_issue_custom_fields!(issue, attributes, problems)
-      return if problems.any? { |problem| problem.start_with?('custom_field_values ') }
-
-      blocked(problems, 'custom_field_values') do
-        require_custom_fields!(issue, attributes['custom_field_values'], issue.required_attribute_names(user))
-      end
+    # Charged to custom_field_values, as the refusals before the assignment are.
+    def require_issue_custom_fields!(issue)
+      problems = []
+      blocked(problems, 'custom_field_values') { require_custom_fields!(issue, issue.required_attribute_names(user)) }
+      refuse_blocked!(issue, problems)
     end
 
     def required_text(field, record)
