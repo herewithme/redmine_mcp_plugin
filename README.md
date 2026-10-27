@@ -4,7 +4,22 @@ A [Model Context Protocol](https://modelcontextprotocol.io) server that runs ins
 plugin. It adds one endpoint, `POST /mcp`, and authenticates it with Redmine's own mechanisms. Every
 tool runs as a real Redmine user and is limited by that user's permissions.
 
-Version 0.1.0. Read-only by default.
+Version 0.2.0. Read-only by default. See [CHANGELOG.md](CHANGELOG.md).
+
+## A fork of a fork
+
+This repository, [herewithme/redmine_mcp_plugin](https://github.com/herewithme/redmine_mcp_plugin),
+is the third link in a chain:
+
+1. [joaoperfig/redmine_mcp_plugin](https://github.com/joaoperfig/redmine_mcp_plugin), by João
+   Figueira: the original plugin - the `/mcp` endpoint on Redmine's own authentication and
+   permissions, schema validation, paging and OAuth2 discovery.
+2. [stenikgroup/redmine_mcp_plugin](https://github.com/stenikgroup/redmine_mcp_plugin), by Stenik
+   (Stoyan Tinchev), forked from the first: write tools, every issue field, relations, news,
+   attachments, checklists and tags, narrowed OAuth2 scopes, the Doorkeeper fix and extensions.
+   Most of this README is theirs, and "we" and "our" in it describe their deployment.
+3. This fork, by Be API (Amaury Balmer), forked from the second: Redmine 7.0 compatibility, a
+   working test suite, and custom field values checked before a write. See the changelog.
 
 Target platform, which is what we run:
 
@@ -27,7 +42,7 @@ Redmine runs under Phusion Passenger inside nginx. The plugin is cloned as the `
 user:
 
 ```bash
-sudo -u redmine git clone https://github.com/stenikgroup/redmine_mcp_plugin.git \
+sudo -u redmine git clone https://github.com/herewithme/redmine_mcp_plugin.git \
   /path/to/redmine/plugins/redmine_mcp_plugin
 sudo systemctl restart nginx
 ```
@@ -111,7 +126,7 @@ An extension adds the permissions of its tools in the same way; see Extensions.
 
 ## Local patches
 
-Two changes are ours, both in this repository.
+Two changes came from the stenikgroup fork and are not in the original plugin.
 
 ### `supported_scopes`
 
@@ -538,6 +553,6 @@ so this is for testing; claude.ai reads the discovery documents and runs the OAu
 
 GPL-2. See [LICENSE](LICENSE).
 
-This project began as [joaoperfig/redmine_mcp_plugin](https://github.com/joaoperfig/redmine_mcp_plugin)
-and is maintained here as our own; the original copyright notices are preserved as the licence
-requires.
+This project began as [joaoperfig/redmine_mcp_plugin](https://github.com/joaoperfig/redmine_mcp_plugin),
+continued as [stenikgroup/redmine_mcp_plugin](https://github.com/stenikgroup/redmine_mcp_plugin), and
+is maintained here; the original copyright notices are preserved as the licence requires.
