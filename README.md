@@ -21,20 +21,26 @@ is the third link in a chain:
 3. This fork, by Be API (Amaury Balmer), forked from the second: Redmine 7.0 compatibility, a
    working test suite, and custom field values checked before a write. See the changelog.
 
-Target platform, which is what we run:
+## Compatibility
 
-| | |
-|---|---|
-| Redmine | 6.1.2 |
-| Rails | 7.2.3 (pinned by Redmine 6.1.2's `Gemfile`) |
-| Ruby | 3.3.11, via rbenv |
+Checked with version 0.2.0 on 2026-10-27:
 
-`init.rb` declares a floor of Redmine 6.1.0, which is where OAuth2 (Doorkeeper) support lands. We
-develop and run against 6.1.2. The plugin was checked against both Redmine 6.1.2 (Rails 7.2.3) and
-Redmine 7.0.2 (Rails 8.1.4), on Ruby 3.3, on 2026-10-27: the test suite passes on each, and every
-tool was exercised live on each, over an API key and over a scoped OAuth2 token. Redmine 7.0
-removed `Issue#addable_watcher_users`; the plugin rebuilds that list itself from core scopes that
-exist on both versions.
+| Redmine | Rails | Ruby |
+|---|---|---|
+| 6.1.2 | 7.2.3 | 3.3 |
+| 7.0.2 | 8.1.4 | 3.3 |
+
+On each, the test suite passes and every tool was exercised live, over an API key and over a scoped
+OAuth2 token. Rails is the version each Redmine pins in its `Gemfile`. `init.rb` declares a floor of
+Redmine 6.1.0, which is where OAuth2 (Doorkeeper) support lands. Redmine 7.0 removed
+`Issue#addable_watcher_users`; the plugin rebuilds that list itself from core scopes that exist on
+both versions.
+
+Be API runs this fork in production on Redmine trunk, with Rails 8.1.4 and Ruby 3.2.3. The test
+suite is not run there: trunk and Ruby 3.2 are covered by live use only, and a core removal reaches
+trunk before any release.
+
+Before this fork, stenikgroup developed and ran the plugin on Redmine 6.1.2 with Ruby 3.3.11.
 
 ## Deployment
 
