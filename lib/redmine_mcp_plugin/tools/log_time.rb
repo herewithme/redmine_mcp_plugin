@@ -45,6 +45,7 @@ module RedmineMcpPlugin
         entry = TimeEntry.new(project: project, issue: issue, author: user, user: user,
                               spent_on: spent_on(arguments))
         entry.safe_attributes = attributes_from(entry, arguments, project)
+        require_custom_fields!(entry)
         raise ToolError, "Could not log time: #{entry.errors.full_messages.join('; ')}" unless entry.save
 
         entry_state(entry, custom_field_ids(arguments))
@@ -55,7 +56,6 @@ module RedmineMcpPlugin
         attributes['comments'] = arguments['comments'].to_s if arguments.key?('comments')
 
         values = custom_field_values_for(entry, arguments['custom_field_values'])
-        require_custom_fields!(entry, values)
         attributes['custom_field_values'] = values if values
 
         attributes

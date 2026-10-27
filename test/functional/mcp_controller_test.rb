@@ -303,6 +303,53 @@ class McpControllerTest < Redmine::ControllerTest
     end
   end
 
+  # Core reads the workflow rules of the status being set, at every save.
+  def test_update_issue_names_a_custom_field_the_new_status_requires
+    enable_mcp('read_only' => '0')
+    WorkflowPermission.create!(tracker_id: 1, old_status_id: 2, role_id: 1, field_name: '1', rule: 'required')
+    result = call_tool('update_issue', { 'issue' => 1, 'status' => 'Assigned' })
+    assert result['isError'], result.inspect
+    assert_match(/custom_field_values \(custom field Database \(id 1\) is required; accepts "MySQL"/,
+                 result['content'].first['text'])
+    assert_equal 1, Issue.find(1).status_id
+  end
+
+  def test_create_issue_names_a_custom_field_the_status_requires
+    enable_mcp('read_only' => '0')
+    WorkflowPermission.create!(tracker_id: 1, old_status_id: 2, role_id: 1, field_name: '1', rule: 'required')
+    assert_no_difference 'Issue.count' do
+      result = call_tool('create_issue', { 'project' => 'ecookbook', 'tracker' => 'Bug', 'subject' => 'Assigned',
+                                           'status' => 'Assigned' })
+      assert result['isError'], result.inspect
+      assert_match(/custom field Database \(id 1\) is required/, result['content'].first['text'])
+    end
+  end
+
+  # A tracker move makes core recheck every custom field, flag included.
+  def test_update_issue_names_a_required_custom_field_left_blank_by_a_tracker_move
+    enable_mcp('read_only' => '0')
+    issue = Issue.find(1)
+    issue.custom_field_values = { '6' => '' }
+    issue.save!
+    CustomField.find(6).update!(is_required: true)
+    result = call_tool('update_issue', { 'issue' => 1, 'tracker' => 'Feature request' })
+    assert result['isError'], result.inspect
+    assert_match(/custom field Float field \(id 6\) is required/, result['content'].first['text'])
+    assert_equal 1, Issue.find(1).tracker_id
+  end
+
+  # Without a status, tracker or custom field change core does not recheck the flag, and neither does this.
+  def test_update_issue_leaves_a_blank_required_custom_field_alone_when_nothing_rechecks_it
+    enable_mcp('read_only' => '0')
+    issue = Issue.find(1)
+    issue.custom_field_values = { '6' => '' }
+    issue.save!
+    CustomField.find(6).update!(is_required: true)
+    result = call_tool('update_issue', { 'issue' => 1, 'subject' => 'Untouched' })
+    assert_not result['isError'], result.inspect
+    assert_equal 'Untouched', Issue.find(1).subject
+  end
+
   # Core accepts the value already stored even once it is no longer offered.
   def test_update_issue_keeps_a_stored_value_no_longer_offered
     enable_mcp('read_only' => '0')

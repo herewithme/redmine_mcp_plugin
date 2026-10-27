@@ -78,11 +78,13 @@ module RedmineMcpPlugin
         attributes['tracker_id'] = issue.tracker_id if sent.include?('tracker')
         tags          = plugin?(:redmineup_tags) ? tag_attributes(issue, arguments, problems) : {}
         adds, removes = watcher_changes(issue, arguments, problems)
-        require_issue_custom_fields!(issue, attributes, problems)
         refuse_blocked!(issue, problems)
 
         # Indifferent access: the tags plugin reads its keys as symbols.
         issue.safe_attributes = attributes.merge(tags).with_indifferent_access
+        # Once the status and tracker are set: a workflow may require a field
+        # at the new status, and a tracker move makes core recheck them all.
+        require_issue_custom_fields!(issue)
         journal_tags!(issue) if tags.any?
         Issue.transaction do
           raise ToolError, "Could not update issue: #{issue.errors.full_messages.join('; ')}" unless issue.save

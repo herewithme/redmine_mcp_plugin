@@ -327,11 +327,14 @@ option, the id, `1` or `0`); a label that names exactly one value is accepted in
 aside, as are `"me"` for a user field and `true`/`false` for a bool, and the value already stored
 stays accepted, as core keeps it. Anything else is refused with the field's name, its id and up to
 25 accepted values with their labels. A required field left blank is refused the same way, with its
-choices: on a new issue or time entry every required field is checked, as core validates them all;
-on an update, only once a custom field is sent, since core revalidates them only then. Required
-means the field's own flag or, on an issue, a workflow rule for this user on this tracker. The
-choices come from the same core call as `get_issue_fields` and `list_enumerations` report, so the
-refusal and the listing never disagree.
+choices, exactly when core would refuse it: on a new issue or time entry every required field is
+checked, as core validates them all; on an update, a field a workflow rule requires is checked at
+every save, with the rules of the status being set rather than the stored one, and a field required
+by its own flag once a custom field is sent or the tracker changes, since core rechecks the flag
+only then. An update that changes none of that saves as core does, blank field included. Required
+means the field's own flag or, on an issue, a workflow rule for this user on this tracker and
+status. The choices come from the same core call as `get_issue_fields` and `list_enumerations`
+report, so the refusal and the listing never disagree.
 
 `create_issue` and `update_issue` take every field of core's issue form: the standard attributes,
 custom fields, watchers, and with the plugins below tags; checklist items only through

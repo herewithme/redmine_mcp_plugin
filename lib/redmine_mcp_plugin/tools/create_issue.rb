@@ -59,11 +59,12 @@ module RedmineMcpPlugin
         problems   = []
         attributes = issue_attributes_from(issue, arguments.except('tracker'), problems)
         tags = plugin?(:redmineup_tags) ? tag_attributes(issue, arguments, problems) : {}
-        require_issue_custom_fields!(issue, attributes, problems)
         refuse_blocked!(issue, problems)
 
         # Indifferent access: the tags plugin reads its keys as symbols.
         issue.safe_attributes = attributes.merge(tags).with_indifferent_access
+        # Once the status is set: a workflow may require a field there.
+        require_issue_custom_fields!(issue)
         raise ToolError, "Could not create issue: #{issue.errors.full_messages.join('; ')}" unless issue.save
 
         issue_state(stored(issue), arguments)
