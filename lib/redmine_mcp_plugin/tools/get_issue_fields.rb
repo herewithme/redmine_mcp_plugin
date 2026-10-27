@@ -60,7 +60,7 @@ module RedmineMcpPlugin
           payload[:done_ratio_note] = 'redmine_checklists computes it once the issue has checklist items'
         end
         if user.allowed_to?(:add_issue_watchers, project)
-          payload[:addable_watcher_users] = issue.addable_watcher_users.map { |p| principal_row(p) }
+          payload[:addable_watcher_users] = addable_watcher_users(issue).map { |p| principal_row(p) }
         end
         if plugin?(:redmine_checklists)
           payload[:checklists] = { edit: user.allowed_to?(:edit_checklists, project),

@@ -5,7 +5,7 @@ require File.expand_path('../test_helper', __dir__)
 class McpControllerTest < Redmine::ControllerTest
   tests McpController
   fixtures :projects, :users, :email_addresses, :roles, :members, :member_roles,
-           :issues, :issue_statuses, :trackers, :enumerations, :enabled_modules
+           :issues, :issue_statuses, :trackers, :enumerations, :enabled_modules, :watchers
 
   def setup
     Setting.rest_api_enabled = '1'
@@ -30,8 +30,11 @@ class McpControllerTest < Redmine::ControllerTest
     body.to_json
   end
 
+  # ActionController::TestCase#process takes no headers keyword, on any Rails:
+  # request headers are set on @request before the call.
   def post_mcp(payload, headers = {})
-    post :handle, body: payload, as: :json, headers: headers
+    headers.each { |name, value| @request.headers[name] = value }
+    post :handle, body: payload, as: :json
   end
 
   def json_body
@@ -103,6 +106,7 @@ class McpControllerTest < Redmine::ControllerTest
   end
 
   def test_get_returns_405_because_there_is_no_stream
+    @request.headers['X-Redmine-API-Key'] = User.find(2).api_key
     get :stream
     assert_response :method_not_allowed
   end
@@ -188,7 +192,7 @@ class McpControllerTest < Redmine::ControllerTest
   def test_invisible_issue_is_reported_as_not_found
     issue = Issue.find(4)
     issue.update_columns(is_private: true)
-    post_mcp rpc('tools/call', { 'name' => 'get_issue', 'arguments' => { 'id' => issue.id } }),
+    post_mcp rpc('tools/call', { 'name' => 'get_issue', 'arguments' => { 'issue' => issue.id } }),
              api_key_headers(User.find(7))
     assert json_body['result']['isError']
     assert_match(/No visible issue/, json_body['result']['content'].first['text'])
@@ -210,5 +214,18 @@ class McpControllerTest < Redmine::ControllerTest
     post_mcp rpc('tools/call', { 'name' => 'list_users' }), api_key_headers(user)
     total = json_body['result']['structuredContent']['total_count']
     assert_equal Principal.visible(user).where(type: 'User').active.count, total
+  end
+
+  # Core dropped Issue#addable_watcher_users (#43429); the plugin rebuilds the list
+  # and must leave out current watchers and anyone outside the project.
+  def test_get_issue_fields_lists_addable_watchers_without_current_ones
+    issue = Issue.find(2)
+    post_mcp rpc('tools/call', { 'name' => 'get_issue_fields', 'arguments' => { 'issue' => issue.id } }),
+             api_key_headers(User.find(2))
+    refute json_body['result']['isError'], json_body['result'].inspect
+    ids = json_body['result']['structuredContent']['addable_watcher_users'].map { |p| p['id'] }
+    assert ids.any?, 'a manager should be offered at least one watcher'
+    assert_empty ids & issue.watcher_user_ids, 'current watchers must not be offered again'
+    assert_empty ids - issue.project.principals.pluck(:id), 'only project members may watch'
   end
 end
