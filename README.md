@@ -15,7 +15,10 @@ Target platform, which is what we run:
 | Ruby | 3.3.11, via rbenv |
 
 `init.rb` declares a floor of Redmine 6.1.0, which is where OAuth2 (Doorkeeper) support lands. We
-develop and run against 6.1.2 and do not test anything else.
+develop and run against 6.1.2. The plugin was also checked against Redmine 7.0.2 (Rails 8.1.4,
+Ruby 3.3) on 2026-10-26: the test suite passes and every tool was exercised live, over an API key
+and over a scoped OAuth2 token. Redmine 7.0 removed `Issue#addable_watcher_users`; the plugin
+rebuilds that list itself from core scopes that exist on both versions.
 
 ## Deployment
 
